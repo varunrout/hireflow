@@ -1,0 +1,25 @@
+{
+  "name": "hireflow",
+  "private": true,
+  "version": "0.1.0",
+  "description": "AI-powered job application copilot",
+  "engines": { "node": ">=20.0.0", "pnpm": ">=9.0.0" },
+  "packageManager": "pnpm@9.0.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "pnpm --filter @hireflow/api dev & pnpm --filter @hireflow/web dev",
+    "build": "pnpm --filter @hireflow/schemas build && pnpm --filter @hireflow/web build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md}\" --ignore-path .gitignore",
+    "typecheck": "pnpm -r typecheck",
+    "clean": "pnpm -r exec -- rm -rf node_modules dist .next"
+  },
+  "devDependencies": {
+    "prettier": "^3.3.3",
+    "typescript": "^5.5.4"
+  }
+}
