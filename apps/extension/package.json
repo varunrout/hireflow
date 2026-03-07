@@ -1,0 +1,26 @@
+{
+  "name": "@hireflow/extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "HireFlow Chrome Extension",
+  "scripts": {
+    "dev": "webpack --config webpack.config.js --watch",
+    "build": "webpack --config webpack.config.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hireflow/schemas": "workspace:*",
+    "@hireflow/config": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.270",
+    "@types/node": "^22.5.0",
+    "copy-webpack-plugin": "^12.0.2",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5",
+    "webpack": "^5.94.0",
+    "webpack-cli": "^5.1.4"
+  }
+}
