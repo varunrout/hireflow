@@ -1,10 +1,11 @@
 """Alembic environment configuration for async SQLAlchemy."""
 import asyncio
 from logging.config import fileConfig
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from alembic import context
 from sqlalchemy import pool
-from sqlalchemy.ext.asyncio import async_engine_from_config
+from sqlalchemy.ext.asyncio import async_engine_from_config, create_async_engine
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -28,13 +29,23 @@ from app.core.config import settings  # noqa: E402
 target_metadata = Base.metadata
 
 
-def get_url() -> str:
-    return settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
+def _build_async_db_url(url: str) -> tuple[str, dict]:
+    """Convert a postgres URL to asyncpg format, stripping unsupported params."""
+    url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query)
+    needs_ssl = params.pop("sslmode", ["disable"])[0] in ("require", "verify-ca", "verify-full")
+    params.pop("channel_binding", None)
+    new_query = urlencode({k: v[0] for k, v in params.items()})
+    clean_url = urlunparse(parsed._replace(query=new_query))
+    connect_args = {"ssl": True} if needs_ssl else {}
+    return clean_url, connect_args
 
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
-    url = get_url()
+    url, _ = _build_async_db_url(settings.DATABASE_URL)
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -56,13 +67,11 @@ async def run_async_migrations() -> None:
     """In this scenario we need to create an Engine
     and associate a connection with the context.
     """
-    configuration = config.get_section(config.config_ini_section)
-    if configuration:
-        configuration["sqlalchemy.url"] = get_url()
-    connectable = async_engine_from_config(
-        configuration or {},
-        prefix="sqlalchemy.",
+    url, connect_args = _build_async_db_url(settings.DATABASE_URL)
+    connectable = create_async_engine(
+        url,
         poolclass=pool.NullPool,
+        connect_args=connect_args,
     )
 
     async with connectable.connect() as connection:
