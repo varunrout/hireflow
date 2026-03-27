@@ -71,7 +71,11 @@ class Settings(BaseSettings):
     @classmethod
     def parse_cors(cls, v: str | list) -> list:
         if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",")]
+            stripped = v.strip()
+            if stripped.startswith("["):
+                import json
+                return json.loads(stripped)
+            return [origin.strip() for origin in stripped.split(",")]
         return v
 
 
