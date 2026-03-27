@@ -2,7 +2,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class BaseSchema(BaseModel):
@@ -45,6 +45,27 @@ class TokenResponse(BaseSchema):
 
 class RefreshRequest(BaseSchema):
     refresh_token: str
+
+
+class UpdateUserRequest(BaseSchema):
+    email: EmailStr | None = None
+    full_name: str | None = None
+
+
+class ChangePasswordRequest(BaseSchema):
+    current_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        if not any(c.isupper() for c in v):
+            raise ValueError("Password must contain at least one uppercase letter")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("Password must contain at least one digit")
+        return v
 
 
 class UserResponse(BaseSchema):
@@ -182,6 +203,65 @@ class CandidatePreferenceResponse(CandidatePreferenceCreate):
     updated_at: datetime
 
 
+class AutomationPipelineSettingsUpdate(BaseSchema):
+    enabled: bool = False
+    auto_apply_enabled: bool = False
+    require_human_review: bool = True
+    auto_tailor_resume: bool = True
+    auto_generate_cover_letter: bool = False
+    allowed_sources: list[str] = Field(default_factory=list)
+    search_terms: list[str] = Field(default_factory=list)
+    target_locations: list[str] = Field(default_factory=list)
+    excluded_keywords: list[str] = Field(default_factory=list)
+    min_match_score: float = 70.0
+    max_jobs_per_run: int = 25
+    max_applications_per_day: int = 5
+
+
+class AutomationPipelineSettingsResponse(AutomationPipelineSettingsUpdate):
+    id: UUID
+    user_id: UUID
+    created_at: datetime
+    updated_at: datetime
+
+
+class AutomationReadinessResponse(BaseSchema):
+    has_profile: bool
+    has_preferences: bool
+    resume_count: int
+    saved_job_count: int
+    application_count: int
+    job_match_count: int
+    ready_for_matching: bool
+    ready_for_auto_apply: bool
+    blockers: list[str] = Field(default_factory=list)
+    suggestions: list[str] = Field(default_factory=list)
+
+
+class AutomationRunRequest(BaseSchema):
+    dry_run: bool = True
+
+
+class AutomationRunResponse(BaseSchema):
+    id: UUID
+    user_id: UUID
+    triggered_by: str
+    status: str
+    matched_jobs_count: int
+    reviewed_jobs_count: int
+    applied_jobs_count: int
+    skipped_jobs_count: int
+    summary: dict
+    started_at: datetime
+    finished_at: datetime | None
+    created_at: datetime
+
+
+class AutomationRunListResponse(BaseSchema):
+    items: list[AutomationRunResponse] = Field(default_factory=list)
+    total: int
+
+
 # ---------------------------------------------------------------------------
 # Job schemas
 # ---------------------------------------------------------------------------
@@ -224,6 +304,66 @@ class JobParseResultResponse(BaseSchema):
     benefits: list[str]
     parsed_at: datetime
     parser_version: str | None
+
+
+class JobParseResultPreview(BaseSchema):
+    required_skills: list[str] = []
+    preferred_skills: list[str] = []
+    required_experience_years: int | None = None
+    required_education: str | None = None
+    keywords: list[str] = []
+    responsibilities: list[str] = []
+    benefits: list[str] = []
+
+
+class ExternalJobSearchRequest(BaseSchema):
+    role: str
+    location: str | None = None
+    remote_only: bool = False
+    limit: int = 10
+
+
+class ExternalJobResult(BaseSchema):
+    provider: str
+    title: str
+    company: str
+    location: str | None = None
+    remote_type: str | None = None
+    employment_type: str | None = None
+    description: str
+    requirements: list[str] = []
+    nice_to_haves: list[str] = []
+    source: str
+    source_url: str | None = None
+    source_job_id: str | None = None
+    posted_at: str | None = None
+
+
+class ExternalJobSearchResponse(BaseSchema):
+    items: list[ExternalJobResult]
+    total: int
+
+
+class ExternalJobImportRequest(JobPostingCreate):
+    provider: str | None = None
+
+
+class JobExtractionRequest(BaseSchema):
+    job_text: str
+    source_url: str | None = None
+
+
+class JobExtractionPreviewResponse(BaseSchema):
+    job: JobPostingCreate
+    parse_result: JobParseResultPreview
+    extraction_method: str
+    confidence_notes: list[str] = []
+
+
+class JobIngestionResponse(BaseSchema):
+    job: JobPostingResponse
+    parse_result: JobParseResultResponse
+    extraction_method: str
 
 
 class JobMatchResponse(BaseSchema):

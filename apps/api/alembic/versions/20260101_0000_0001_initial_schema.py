@@ -23,31 +23,37 @@ def upgrade() -> None:
     employment_type = postgresql.ENUM(
         "full_time", "part_time", "contract", "internship", "freelance",
         name="employmenttypeenum",
+        create_type=False,
     )
-    remote_type = postgresql.ENUM("remote", "hybrid", "onsite", name="remotetypeenum")
+    remote_type = postgresql.ENUM("remote", "hybrid", "onsite", name="remotetypeenum", create_type=False)
     application_status = postgresql.ENUM(
         "saved", "applied", "screening", "phone_interview", "technical_interview",
         "onsite_interview", "offer", "rejected", "withdrawn", "accepted",
         name="applicationstatusenum",
+        create_type=False,
     )
-    resume_format = postgresql.ENUM("ats", "designed", "tailored", name="resumeformatenum")
+    resume_format = postgresql.ENUM("ats", "designed", "tailored", name="resumeformatenum", create_type=False)
     job_source = postgresql.ENUM(
         "linkedin", "indeed", "glassdoor", "greenhouse", "lever", "workday", "manual", "other",
         name="jobsourceenum",
+        create_type=False,
     )
     skill_category = postgresql.ENUM(
         "technical", "soft", "language", "tool", "framework", "other",
         name="skillcategoryenum",
+        create_type=False,
     )
     skill_proficiency = postgresql.ENUM(
         "beginner", "intermediate", "advanced", "expert",
         name="skillproficiencyenum",
+        create_type=False,
     )
     question_category = postgresql.ENUM(
         "behavioral", "technical", "situational", "background", "motivation", "other",
         name="questioncategoryenum",
+        create_type=False,
     )
-    document_status = postgresql.ENUM("draft", "final", "archived", name="documentstatusenum")
+    document_status = postgresql.ENUM("draft", "final", "archived", name="documentstatusenum", create_type=False)
 
     for enum in [
         employment_type, remote_type, application_status, resume_format,
@@ -169,8 +175,8 @@ def upgrade() -> None:
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("profile_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("name", sa.String(100), nullable=False),
-        sa.Column("category", sa.Enum("technical", "soft", "language", "tool", "framework", "other", name="skillcategoryenum"), nullable=False),
-        sa.Column("proficiency", sa.Enum("beginner", "intermediate", "advanced", "expert", name="skillproficiencyenum")),
+        sa.Column("category", skill_category, nullable=False),
+        sa.Column("proficiency", skill_proficiency),
         sa.ForeignKeyConstraint(["profile_id"], ["candidate_profiles.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -206,15 +212,15 @@ def upgrade() -> None:
         sa.Column("title", sa.String(300), nullable=False),
         sa.Column("company", sa.String(200), nullable=False),
         sa.Column("location", sa.String(200)),
-        sa.Column("remote_type", sa.Enum("remote", "hybrid", "onsite", name="remotetypeenum")),
-        sa.Column("employment_type", sa.Enum("full_time", "part_time", "contract", "internship", "freelance", name="employmenttypeenum")),
+        sa.Column("remote_type", remote_type),
+        sa.Column("employment_type", employment_type),
         sa.Column("description", sa.Text(), nullable=False),
         sa.Column("requirements", postgresql.ARRAY(sa.Text()), server_default="{}"),
         sa.Column("nice_to_haves", postgresql.ARRAY(sa.Text()), server_default="{}"),
         sa.Column("salary_min", sa.Integer()),
         sa.Column("salary_max", sa.Integer()),
         sa.Column("salary_currency", sa.String(3), server_default="USD"),
-        sa.Column("source", sa.Enum("linkedin", "indeed", "glassdoor", "greenhouse", "lever", "workday", "manual", "other", name="jobsourceenum"), nullable=False),
+        sa.Column("source", job_source, nullable=False),
         sa.Column("source_url", sa.String(2048)),
         sa.Column("source_job_id", sa.String(500)),
         sa.Column("posted_at", sa.DateTime(timezone=True)),
@@ -231,7 +237,7 @@ def upgrade() -> None:
         "resume_templates",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("name", sa.String(100), nullable=False),
-        sa.Column("format", sa.Enum("ats", "designed", "tailored", name="resumeformatenum"), nullable=False),
+        sa.Column("format", resume_format, nullable=False),
         sa.Column("description", sa.String(500)),
         sa.Column("thumbnail_url", sa.String(500)),
         sa.Column("theme_tokens", postgresql.JSONB(), server_default="{}"),
@@ -250,12 +256,12 @@ def upgrade() -> None:
         sa.Column("template_id", postgresql.UUID(as_uuid=True)),
         sa.Column("job_posting_id", postgresql.UUID(as_uuid=True)),
         sa.Column("name", sa.String(200), nullable=False),
-        sa.Column("format", sa.Enum("ats", "designed", "tailored", name="resumeformatenum"), nullable=False),
+        sa.Column("format", resume_format, nullable=False),
         sa.Column("sections", postgresql.JSONB(), server_default="[]"),
         sa.Column("theme_overrides", postgresql.JSONB()),
         sa.Column("ai_tailored", sa.Boolean(), server_default="false"),
         sa.Column("ai_generation_metadata", postgresql.JSONB()),
-        sa.Column("status", sa.Enum("draft", "final", "archived", name="documentstatusenum"), server_default="draft"),
+        sa.Column("status", document_status, server_default="draft"),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["job_posting_id"], ["job_postings.id"], ondelete="SET NULL"),
@@ -275,7 +281,7 @@ def upgrade() -> None:
         sa.Column("content", sa.Text(), nullable=False),
         sa.Column("ai_generated", sa.Boolean(), server_default="false"),
         sa.Column("ai_generation_metadata", postgresql.JSONB()),
-        sa.Column("status", sa.Enum("draft", "final", "archived", name="documentstatusenum"), server_default="draft"),
+        sa.Column("status", document_status, server_default="draft"),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["job_posting_id"], ["job_postings.id"], ondelete="SET NULL"),
@@ -339,11 +345,7 @@ def upgrade() -> None:
         sa.Column("job_posting_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("resume_version_id", postgresql.UUID(as_uuid=True)),
         sa.Column("cover_letter_version_id", postgresql.UUID(as_uuid=True)),
-        sa.Column("status", sa.Enum(
-            "saved", "applied", "screening", "phone_interview", "technical_interview",
-            "onsite_interview", "offer", "rejected", "withdrawn", "accepted",
-            name="applicationstatusenum"
-        ), server_default="saved", nullable=False),
+        sa.Column("status", application_status, server_default="saved", nullable=False),
         sa.Column("applied_at", sa.DateTime(timezone=True)),
         sa.Column("notes", sa.Text()),
         sa.Column("source", sa.String(20), server_default="manual"),
@@ -382,10 +384,7 @@ def upgrade() -> None:
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("question", sa.Text(), nullable=False),
         sa.Column("answer", sa.Text(), nullable=False),
-        sa.Column("category", sa.Enum(
-            "behavioral", "technical", "situational", "background", "motivation", "other",
-            name="questioncategoryenum"
-        ), nullable=False),
+        sa.Column("category", question_category, nullable=False),
         sa.Column("tags", postgresql.ARRAY(sa.String(100)), server_default="{}"),
         sa.Column("times_used", sa.Integer(), server_default="0", nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),

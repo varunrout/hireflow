@@ -11,7 +11,7 @@
   ],
   "scripts": {
     "dev": "pnpm --filter @hireflow/api dev & pnpm --filter @hireflow/web dev",
-    "build": "pnpm --filter @hireflow/schemas build && pnpm --filter @hireflow/web build",
+    "build": "pnpm --filter @hireflow/schemas build && pnpm --filter @hireflow/config build && pnpm --filter @hireflow/web build",
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\" --ignore-path .gitignore",

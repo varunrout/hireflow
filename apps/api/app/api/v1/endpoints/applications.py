@@ -33,7 +33,7 @@ VALID_TRANSITIONS: dict[str, list[str]] = {
 }
 
 
-@router.post("/", response_model=ApplicationResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ApplicationResponse, status_code=status.HTTP_201_CREATED)
 async def create_application(
     payload: ApplicationCreate,
     current_user: User = Depends(get_current_user),
@@ -46,7 +46,7 @@ async def create_application(
     return app
 
 
-@router.get("/", response_model=PaginatedResponse)
+@router.get("", response_model=PaginatedResponse)
 async def list_applications(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
@@ -66,9 +66,12 @@ async def list_applications(
         query.offset(offset).limit(limit).order_by(Application.updated_at.desc())
     )
     items = result.scalars().all()
+    serialized_items = [
+        ApplicationResponse.model_validate(item).model_dump(mode="json") for item in items
+    ]
 
     return {
-        "items": items,
+        "items": serialized_items,
         "total": total,
         "page": page,
         "limit": limit,

@@ -1,32 +1,42 @@
 import axios from "axios";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
+const API_BASE =
+  typeof window !== "undefined" ? "/api/v1" : process.env.NEXT_PUBLIC_API_URL || "/api/v1";
 
 export const apiClient = axios.create({
   baseURL: API_BASE,
+  withCredentials: true,
   headers: { "Content-Type": "application/json" },
-});
-
-// Attach Bearer token from localStorage
-apiClient.interceptors.request.use((config) => {
-  if (typeof window !== "undefined") {
-    const token = localStorage.getItem("access_token");
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-  }
-  return config;
 });
 
 // Handle 401 - clear token and redirect to login
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
+    const originalRequest = error.config;
+
+    if (
+      error.response?.status === 401 &&
+      typeof window !== "undefined" &&
+      originalRequest &&
+      !originalRequest._retry &&
+      !String(originalRequest.url || "").includes("/auth/login") &&
+      !String(originalRequest.url || "").includes("/auth/refresh")
+    ) {
+      originalRequest._retry = true;
+
+      try {
+        await apiClient.post("/auth/refresh");
+        return apiClient(originalRequest);
+      } catch {
+        window.location.href = "/login";
+      }
+    }
+
     if (error.response?.status === 401 && typeof window !== "undefined") {
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("refresh_token");
       window.location.href = "/login";
     }
+
     return Promise.reject(error);
   }
 );

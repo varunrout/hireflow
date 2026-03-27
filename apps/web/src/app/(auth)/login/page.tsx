@@ -16,6 +16,7 @@ function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
   const registered = params.get("registered");
+  const next = params.get("next") || "/dashboard";
 
   const {
     register,
@@ -27,7 +28,7 @@ function LoginForm() {
 
   const mutation = useMutation({
     mutationFn: authApi.login,
-    onSuccess: () => router.push("/dashboard"),
+    onSuccess: () => router.push(next),
   });
 
   return (

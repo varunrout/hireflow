@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     ALGORITHM: str = "HS256"
+    ACCESS_COOKIE_NAME: str = "hf_access_token"
+    REFRESH_COOKIE_NAME: str = "hf_refresh_token"
+    COOKIE_SECURE: bool = False
+    COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
 
     # Database
     DATABASE_URL: str = "postgresql://hireflow:hireflow@localhost:5432/hireflow"
@@ -47,6 +51,15 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     OPENAI_DEFAULT_MODEL: str = "gpt-4o"
     OPENAI_FAST_MODEL: str = "gpt-4o-mini"
+
+    # External job APIs
+    REMOTIVE_API_URL: str = "https://remotive.com/api/remote-jobs"
+    ADZUNA_API_URL: str = "https://api.adzuna.com/v1/api"
+    ADZUNA_APP_ID: str = ""
+    ADZUNA_APP_KEY: str = ""
+    ADZUNA_COUNTRY: str = "us"
+    REED_API_URL: str = "https://www.reed.co.uk/api/1.0/search"
+    REED_API_KEY: str = ""
 
     # CORS
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:3001"]

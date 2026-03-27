@@ -1,6 +1,11 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
+  ShieldCheck,
   BarChart3,
+  Bot,
   Briefcase,
   FileText,
   Home,
@@ -10,8 +15,12 @@ import {
   Search,
 } from "lucide-react";
 
+import { authApi } from "@/lib/auth-api";
+
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/admin", label: "Admin Tests", icon: ShieldCheck },
+  { href: "/automation", label: "Automation", icon: Bot },
   { href: "/profile", label: "Profile", icon: Home },
   { href: "/resumes", label: "Resumes", icon: FileText },
   { href: "/jobs", label: "Jobs", icon: Search },
@@ -20,6 +29,14 @@ const NAV_ITEMS = [
 ];
 
 export function Sidebar() {
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    await authApi.logout();
+    router.push("/login");
+    router.refresh();
+  };
+
   return (
     <aside className="flex h-screen w-64 flex-col border-r bg-card">
       <div className="flex h-16 items-center border-b px-6">
@@ -45,7 +62,11 @@ export function Sidebar() {
           <Settings className="h-4 w-4" />
           Settings
         </Link>
-        <button className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent">
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent"
+        >
           <LogOut className="h-4 w-4" />
           Sign out
         </button>

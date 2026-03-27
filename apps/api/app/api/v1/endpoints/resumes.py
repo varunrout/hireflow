@@ -17,7 +17,7 @@ from app.schemas.schemas import (
 router = APIRouter(prefix="/resumes", tags=["resumes"])
 
 
-@router.post("/", response_model=ResumeVersionResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ResumeVersionResponse, status_code=status.HTTP_201_CREATED)
 async def create_resume(
     payload: ResumeVersionCreate,
     current_user: User = Depends(get_current_user),
@@ -44,7 +44,7 @@ async def create_resume(
     return resume
 
 
-@router.get("/", response_model=PaginatedResponse)
+@router.get("", response_model=PaginatedResponse)
 async def list_resumes(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
@@ -59,13 +59,39 @@ async def list_resumes(
         query.offset(offset).limit(limit).order_by(ResumeVersion.updated_at.desc())
     )
     items = result.scalars().all()
+    serialized_items = [
+        ResumeVersionResponse.model_validate(item).model_dump(mode="json") for item in items
+    ]
     return {
-        "items": items,
+        "items": serialized_items,
         "total": total,
         "page": page,
         "limit": limit,
         "pages": (total + limit - 1) // limit,
     }
+
+
+@router.get("/templates", response_model=list[dict])
+async def list_templates(
+    _current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list:
+    result = await db.execute(
+        select(ResumeTemplate).where(ResumeTemplate.is_active == True)  # noqa: E712
+    )
+    templates = result.scalars().all()
+    return [
+        {
+            "id": str(t.id),
+            "name": t.name,
+            "format": t.format.value if hasattr(t.format, "value") else t.format,
+            "description": t.description,
+            "thumbnail_url": t.thumbnail_url,
+            "theme_tokens": t.theme_tokens,
+            "section_order": t.section_order,
+        }
+        for t in templates
+    ]
 
 
 @router.get("/{resume_id}", response_model=ResumeVersionResponse)
@@ -127,24 +153,3 @@ async def delete_resume(
     await db.delete(resume)
 
 
-@router.get("/templates", response_model=list[dict])
-async def list_templates(
-    _current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> list:
-    result = await db.execute(
-        select(ResumeTemplate).where(ResumeTemplate.is_active == True)  # noqa: E712
-    )
-    templates = result.scalars().all()
-    return [
-        {
-            "id": str(t.id),
-            "name": t.name,
-            "format": t.format.value if hasattr(t.format, "value") else t.format,
-            "description": t.description,
-            "thumbnail_url": t.thumbnail_url,
-            "theme_tokens": t.theme_tokens,
-            "section_order": t.section_order,
-        }
-        for t in templates
-    ]

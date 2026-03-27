@@ -134,6 +134,12 @@ class User(Base):
     preferences: Mapped["CandidatePreference | None"] = relationship(
         "CandidatePreference", back_populates="user", uselist=False
     )
+    automation_settings: Mapped["AutomationPipelineSettings | None"] = relationship(
+        "AutomationPipelineSettings", back_populates="user", uselist=False
+    )
+    automation_runs: Mapped[list["AutomationPipelineRun"]] = relationship(
+        "AutomationPipelineRun", back_populates="user"
+    )
     resume_versions: Mapped[list["ResumeVersion"]] = relationship(
         "ResumeVersion", back_populates="user"
     )
@@ -339,6 +345,64 @@ class CandidatePreference(Base):
     )
 
     user: Mapped["User"] = relationship("User", back_populates="preferences")
+
+
+class AutomationPipelineSettings(Base):
+    __tablename__ = "automation_pipeline_settings"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    auto_apply_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    require_human_review: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    auto_tailor_resume: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    auto_generate_cover_letter: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    allowed_sources: Mapped[list[str]] = mapped_column(ARRAY(String(50)), default=list)
+    search_terms: Mapped[list[str]] = mapped_column(ARRAY(String(200)), default=list)
+    target_locations: Mapped[list[str]] = mapped_column(ARRAY(String(200)), default=list)
+    excluded_keywords: Mapped[list[str]] = mapped_column(ARRAY(String(200)), default=list)
+    min_match_score: Mapped[float] = mapped_column(Float, default=70.0, nullable=False)
+    max_jobs_per_run: Mapped[int] = mapped_column(Integer, default=25, nullable=False)
+    max_applications_per_day: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="automation_settings")
+
+
+class AutomationPipelineRun(Base):
+    __tablename__ = "automation_pipeline_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    triggered_by: Mapped[str] = mapped_column(String(20), default="manual", nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="completed", nullable=False)
+    matched_jobs_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    reviewed_jobs_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    applied_jobs_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    skipped_jobs_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    summary: Mapped[dict] = mapped_column(JSONB, default=dict)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="automation_runs")
 
 
 # ---------------------------------------------------------------------------
