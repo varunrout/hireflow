@@ -33,8 +33,9 @@ async def _create_job_with_parse_result(
     db: AsyncSession,
     payload: JobPostingCreate,
     extraction: ExtractionResult,
+    user_id: UUID,
 ) -> tuple[JobPosting, JobParseResult]:
-    job = JobPosting(**payload.model_dump())
+    job = JobPosting(**payload.model_dump(), user_id=user_id)
     db.add(job)
     await db.flush()
 
@@ -61,7 +62,7 @@ async def create_job_posting(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> JobPosting:
-    job = JobPosting(**payload.model_dump())
+    job = JobPosting(**payload.model_dump(), user_id=current_user.id)
     db.add(job)
     await db.flush()
     await db.refresh(job)
@@ -105,7 +106,7 @@ async def extract_job_from_text(
 )
 async def ingest_manual_job(
     payload: JobExtractionRequest,
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> JobIngestionResponse:
     extraction = await job_extraction_service.extract_job(
@@ -116,6 +117,7 @@ async def ingest_manual_job(
         db=db,
         payload=job_payload,
         extraction=extraction,
+        user_id=current_user.id,
     )
     return JobIngestionResponse(
         job=job,
@@ -131,7 +133,7 @@ async def ingest_manual_job(
 )
 async def import_external_job(
     payload: ExternalJobImportRequest,
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> JobIngestionResponse:
     extraction = await job_extraction_service.extract_job(
@@ -150,6 +152,7 @@ async def import_external_job(
         db=db,
         payload=JobPostingCreate(**job_payload.model_dump(exclude={"provider"})),
         extraction=extraction,
+        user_id=current_user.id,
     )
     return JobIngestionResponse(
         job=job,
@@ -164,10 +167,13 @@ async def list_job_postings(
     limit: int = Query(20, ge=1, le=100),
     search: str | None = Query(None),
     source: str | None = Query(None),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    query = select(JobPosting).where(JobPosting.is_active == True)  # noqa: E712
+    query = select(JobPosting).where(
+        JobPosting.is_active == True,  # noqa: E712
+        JobPosting.user_id == current_user.id,
+    )
     if search:
         query = query.where(
             JobPosting.title.ilike(f"%{search}%") | JobPosting.company.ilike(f"%{search}%")
@@ -197,10 +203,15 @@ async def list_job_postings(
 @router.get("/{job_id}", response_model=JobPostingResponse)
 async def get_job_posting(
     job_id: UUID,
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> JobPosting:
-    result = await db.execute(select(JobPosting).where(JobPosting.id == job_id))
+    result = await db.execute(
+        select(JobPosting).where(
+            JobPosting.id == job_id,
+            JobPosting.user_id == current_user.id,
+        )
+    )
     job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job posting not found")
@@ -210,9 +221,19 @@ async def get_job_posting(
 @router.get("/{job_id}/parse-result", response_model=JobParseResultResponse)
 async def get_job_parse_result(
     job_id: UUID,
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> JobParseResult:
+    # Verify job belongs to this user first
+    job_result = await db.execute(
+        select(JobPosting).where(
+            JobPosting.id == job_id,
+            JobPosting.user_id == current_user.id,
+        )
+    )
+    if not job_result.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job posting not found")
+
     result = await db.execute(
         select(JobParseResult).where(JobParseResult.job_posting_id == job_id)
     )

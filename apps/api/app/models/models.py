@@ -146,6 +146,9 @@ class User(Base):
     applications: Mapped[list["Application"]] = relationship(
         "Application", back_populates="user"
     )
+    job_postings: Mapped[list["JobPosting"]] = relationship(
+        "JobPosting", back_populates="user"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -504,6 +507,12 @@ class JobPosting(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     company: Mapped[str] = mapped_column(String(200), nullable=False)
     location: Mapped[str | None] = mapped_column(String(200))
@@ -532,6 +541,7 @@ class JobPosting(Base):
     parse_result: Mapped["JobParseResult | None"] = relationship(
         "JobParseResult", back_populates="job_posting", uselist=False
     )
+    user: Mapped["User | None"] = relationship("User", back_populates="job_postings")
     matches: Mapped[list["JobMatch"]] = relationship("JobMatch", back_populates="job_posting")
     applications: Mapped[list["Application"]] = relationship(
         "Application", back_populates="job_posting"
