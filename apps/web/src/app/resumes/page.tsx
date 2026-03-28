@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { ResumeEditorModal } from "@/components/resumes/ResumeEditorModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -46,12 +47,14 @@ type ResumeWithPersonaId = ResumeVersion & { persona_id?: string | null };
 function ResumeCard({
   resume,
   personas,
+  onOpen,
   onDelete,
   onAssign,
   isDeleting,
 }: {
   resume: ResumeWithPersonaId;
   personas: Persona[];
+  onOpen: () => void;
   onDelete: (id: string) => void;
   onAssign: (resumeId: string, personaId: string | null) => void;
   isDeleting: boolean;
@@ -59,7 +62,7 @@ function ResumeCard({
   const assignedPersona = personas.find((p) => p.id === resume.persona_id);
   return (
     <div className="group flex flex-col gap-3 rounded-xl border bg-white p-4 shadow-sm transition-shadow hover:shadow-md dark:border-gray-700 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0">
+      <button className="min-w-0 flex-1 text-left" onClick={onOpen}>
         <div className="flex flex-wrap items-center gap-2">
           <p className="truncate font-semibold text-gray-900 dark:text-white">{resume.name}</p>
           <StatusBadge status={resume.status ?? "draft"} />
@@ -80,7 +83,7 @@ function ResumeCard({
             {assignedPersona.name}
           </div>
         )}
-      </div>
+      </button>
 
       <div className="flex shrink-0 items-center gap-2">
         <select
@@ -130,6 +133,8 @@ export default function ResumesPage() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState({ name: "", format: "ats", persona_id: "" });
   const [activeTab, setActiveTab] = useState<TabId>("all");
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [selectedResumeId, setSelectedResumeId] = useState<string | null>(null);
 
   const profileQuery = useQuery({
     queryKey: ["profile-for-resumes"],
@@ -193,9 +198,19 @@ export default function ResumesPage() {
       ? allResumes.filter((r) => !r.persona_id)
       : allResumes.filter((r) => r.persona_id === activeTab);
 
+  const selectedResume = allResumes.find((r) => r.id === selectedResumeId);
+  const selectedPersonaName = personas.find((p) => p.id === selectedResume?.persona_id)?.name ?? null;
+
   return (
     <AppShell>
       <div className="space-y-8">
+        <ResumeEditorModal
+          isOpen={editorOpen}
+          resumeId={selectedResumeId}
+          personaName={selectedPersonaName}
+          onClose={() => setEditorOpen(false)}
+        />
+
         <div>
           <h1 className="text-3xl font-bold">Resumes</h1>
           <p className="mt-2 text-muted-foreground">
@@ -347,6 +362,10 @@ export default function ResumesPage() {
                     key={resume.id}
                     resume={resume}
                     personas={personas}
+                    onOpen={() => {
+                      setSelectedResumeId(resume.id!);
+                      setEditorOpen(true);
+                    }}
                     onDelete={(id) => deleteMutation.mutate(id)}
                     onAssign={(resumeId, personaId) =>
                       assignMutation.mutate({ resumeId, personaId })
