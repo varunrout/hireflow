@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { CompletenessCard } from "@/components/profile/CompletenessCard";
+import { ImportPdfModal } from "@/components/profile/ImportPdfModal";
 import {
   profileApi,
   type CandidatePreferencesPayload,
@@ -52,6 +54,7 @@ export default function ProfilePage() {
   const queryClient = useQueryClient();
   const [profileForm, setProfileForm] = useState(emptyProfile);
   const [preferencesForm, setPreferencesForm] = useState(emptyPreferences);
+  const [importPdfOpen, setImportPdfOpen] = useState(false);
   const [skillForm, setSkillForm] = useState<SkillPayload>({
     name: "",
     category: "technical",
@@ -196,12 +199,15 @@ export default function ProfilePage() {
   return (
     <AppShell>
       <div className="space-y-8">
+        <ImportPdfModal isOpen={importPdfOpen} onClose={() => setImportPdfOpen(false)} />
         <div>
           <h1 className="text-3xl font-bold">Profile</h1>
           <p className="mt-2 text-muted-foreground">
             Manage your candidate profile, preferences, and core skills.
           </p>
         </div>
+
+        <CompletenessCard onImportClick={() => setImportPdfOpen(true)} />
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {statCards.map((stat) => (

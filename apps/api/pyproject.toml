@@ -31,6 +31,7 @@ dependencies = [
     "weasyprint>=62.3",
     "structlog>=24.4.0",
     "sentry-sdk[fastapi]>=2.15.0",
+    "pypdf>=4.0.0",
 ]
 
 [project.optional-dependencies]

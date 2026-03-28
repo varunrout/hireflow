@@ -482,3 +482,35 @@ class PaginatedResponse(BaseSchema):
     page: int
     limit: int
     pages: int
+
+
+# ---------------------------------------------------------------------------
+# Resume PDF import
+# ---------------------------------------------------------------------------
+
+
+class ImportSummary(BaseSchema):
+    added: dict[str, int]   # {"work_experiences": 2, "skills": 8, ...}
+    skipped: dict[str, int] # fields that were non-empty and skipped (merge mode)
+
+
+class ParsedResumeImport(BaseSchema):
+    profile: CandidateProfileResponse
+    summary: ImportSummary
+    raw_parsed: dict  # the raw AI output, for debugging / preview
+
+
+# ---------------------------------------------------------------------------
+# Profile completeness
+# ---------------------------------------------------------------------------
+
+
+class SectionCompleteness(BaseSchema):
+    score: int          # 0-100
+    missing: list[str]  # human-readable missing items
+
+
+class CompletenessResponse(BaseSchema):
+    score: int
+    sections: dict[str, SectionCompleteness]
+    suggestions: list[str]

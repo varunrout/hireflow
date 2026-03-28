@@ -23,6 +23,28 @@ export type SkillPayload = {
   proficiency?: "beginner" | "intermediate" | "advanced" | "expert" | undefined;
 };
 
+export type ImportSummary = {
+  added: Record<string, number>;
+  skipped: Record<string, number>;
+};
+
+export type ParsedResumeImport = {
+  profile: CandidateProfile;
+  summary: ImportSummary;
+  raw_parsed: Record<string, unknown>;
+};
+
+export type SectionCompleteness = {
+  score: number;
+  missing: string[];
+};
+
+export type CompletenessResponse = {
+  score: number;
+  sections: Record<string, SectionCompleteness>;
+  suggestions: string[];
+};
+
 export const profileApi = {
   getMyProfile: async (): Promise<CandidateProfile> => {
     const res = await apiClient.get<CandidateProfile>("/profiles/me");
@@ -56,5 +78,21 @@ export const profileApi = {
 
   deleteSkill: async (skillId: string) => {
     await apiClient.delete(`/profiles/me/skills/${skillId}`);
+  },
+
+  importPdf: async (file: File, mode: "merge" | "overwrite"): Promise<ParsedResumeImport> => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await apiClient.post<ParsedResumeImport>(
+      `/profiles/import-pdf?mode=${mode}`,
+      form,
+      { headers: { "Content-Type": "multipart/form-data" } }
+    );
+    return res.data;
+  },
+
+  getCompleteness: async (): Promise<CompletenessResponse> => {
+    const res = await apiClient.get<CompletenessResponse>("/profiles/me/completeness");
+    return res.data;
   },
 };
