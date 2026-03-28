@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { ImportResumePdfModal } from "@/components/resumes/ImportResumePdfModal";
 import { ResumeEditorModal } from "@/components/resumes/ResumeEditorModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -134,6 +135,7 @@ export default function ResumesPage() {
   const [form, setForm] = useState({ name: "", format: "ats", persona_id: "" });
   const [activeTab, setActiveTab] = useState<TabId>("all");
   const [editorOpen, setEditorOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [selectedResumeId, setSelectedResumeId] = useState<string | null>(null);
 
   const profileQuery = useQuery({
@@ -211,12 +213,30 @@ export default function ResumesPage() {
           onClose={() => setEditorOpen(false)}
         />
 
+        <ImportResumePdfModal
+          isOpen={importOpen}
+          personas={personas}
+          onClose={() => setImportOpen(false)}
+          onImported={(resumeId) => {
+            setImportOpen(false);
+            setSelectedResumeId(resumeId);
+            setEditorOpen(true);
+          }}
+        />
+
         <div>
-          <h1 className="text-3xl font-bold">Resumes</h1>
-          <p className="mt-2 text-muted-foreground">
-            Create and manage resume versions. Assign each to a persona to keep your job search
-            organised.
-          </p>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h1 className="text-3xl font-bold">Resumes</h1>
+              <p className="mt-2 text-muted-foreground">
+                Create, import, edit, print, and manage resume versions. Assign each to a persona
+                to keep your job search organised.
+              </p>
+            </div>
+            <Button onClick={() => setImportOpen(true)} disabled={missingProfile}>
+              Import PDF Resume
+            </Button>
+          </div>
         </div>
 
         {missingProfile && (
@@ -276,6 +296,14 @@ export default function ResumesPage() {
                 disabled={!form.name || createMutation.isPending || missingProfile}
               >
                 {createMutation.isPending ? "Creating…" : "Create resume"}
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => setImportOpen(true)}
+                disabled={missingProfile}
+              >
+                Import from PDF
               </Button>
               {personas.length === 0 && (
                 <p className="text-xs text-muted-foreground">

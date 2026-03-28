@@ -34,6 +34,134 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
 
 
 # ---------------------------------------------------------------------------
+# AI parsing → ResumeSection[] format  (used by import-pdf endpoint)
+# ---------------------------------------------------------------------------
+
+_SECTIONS_SYSTEM = """\
+You are an expert resume parser. Extract structured data from the resume text and return it as a \
+JSON object with a top-level key "sections" whose value is an array of section objects.
+Return ONLY valid JSON — no markdown fences, no extra commentary.
+
+Required format:
+{
+  "sections": [
+    {
+      "type": "header",
+      "full_name": "Jane Doe",
+      "headline": "Senior Data Scientist",
+      "email": "jane@example.com",
+      "phone": "+1 555-000-1234",
+      "location": "San Francisco, CA",
+      "website_url": "",
+      "linkedin_url": "https://linkedin.com/in/janedoe",
+      "github_url": "https://github.com/janedoe"
+    },
+    { "type": "summary", "content": "..." },
+    {
+      "type": "experience",
+      "items": [
+        {
+          "company": "Acme Corp",
+          "title": "Data Scientist",
+          "location": "Remote",
+          "start_date": "2021-03",
+          "end_date": "",
+          "is_current": true,
+          "description": "",
+          "achievements": ["Led ML model reducing churn by 20%", "Built real-time scoring pipeline"],
+          "technologies": ["Python", "Spark", "AWS"]
+        }
+      ]
+    },
+    {
+      "type": "education",
+      "items": [
+        {
+          "institution": "MIT",
+          "degree": "M.S. Computer Science",
+          "field_of_study": "Machine Learning",
+          "start_date": "2018",
+          "end_date": "2020",
+          "gpa": null,
+          "description": ""
+        }
+      ]
+    },
+    {
+      "type": "skills",
+      "groups": [
+        { "category": "Technical", "items": ["Python", "SQL", "R"] },
+        { "category": "Frameworks", "items": ["PyTorch", "scikit-learn"] },
+        { "category": "Tools", "items": ["Git", "Docker", "Airflow"] }
+      ]
+    },
+    {
+      "type": "projects",
+      "items": [
+        {
+          "name": "Fraud Detection System",
+          "description": "Built end-to-end ML pipeline ...",
+          "url": "",
+          "repo_url": "https://github.com/janedoe/fraud",
+          "technologies": ["Python", "XGBoost"],
+          "start_date": "2022-01",
+          "end_date": "2022-06"
+        }
+      ]
+    },
+    {
+      "type": "certifications",
+      "items": [
+        {
+          "name": "AWS Certified ML Specialty",
+          "issuer": "Amazon Web Services",
+          "issued_date": "2023-04",
+          "expiry_date": "",
+          "credential_url": ""
+        }
+      ]
+    }
+  ]
+}
+
+Rules:
+- Include ONLY sections that have actual content in the resume.
+- For dates use "YYYY-MM" when month is known, "YYYY" otherwise; use "" when unknown (not null).
+- achievements: extract individual bullet points as SEPARATE strings in the array.
+- technologies: infer from description if not listed explicitly.
+- skills groups: classify into Technical / Frameworks / Tools / Soft Skills / Languages.
+- is_current: true if position is marked "Present" or has no end date and is the latest job.
+- gpa is the only nullable number field; all string fields use "" not null.
+- Preserve the original wording of achievements — do not paraphrase.
+"""
+
+
+async def parse_resume_as_sections(text: str) -> list[dict[str, Any]]:
+    """Parse resume text into the ResumeSection[] format for storage in resume_versions.sections."""
+    from openai import AsyncOpenAI
+
+    client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+    truncated = text[:12_000]
+
+    response = await client.chat.completions.create(
+        model=settings.OPENAI_DEFAULT_MODEL,
+        messages=[
+            {"role": "system", "content": _SECTIONS_SYSTEM},
+            {"role": "user", "content": f"Resume text:\n\n{truncated}"},
+        ],
+        temperature=0,
+        response_format={"type": "json_object"},
+    )
+
+    raw = response.choices[0].message.content or "{}"
+    data = json.loads(raw)
+
+    if isinstance(data, dict):
+        return data.get("sections", [])
+    return []
+
+
+# ---------------------------------------------------------------------------
 # AI parsing
 # ---------------------------------------------------------------------------
 

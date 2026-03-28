@@ -122,7 +122,7 @@ export type CreateResumePayload = {
   template_id?: string | null;
   job_posting_id?: string | null;
   persona_id?: string | null;
-  sections?: Array<Record<string, unknown>>;
+  sections?: ResumeSection[] | Array<Record<string, unknown>>;
   theme_overrides?: Record<string, unknown> | null;
 };
 
@@ -158,8 +158,8 @@ export const resumesApi = {
     return res.data;
   },
 
-  update: async (resumeId: string, payload: CreateResumePayload) => {
-    const res = await apiClient.put<ResumeVersion>(`/resumes/${resumeId}`, payload);
+  update: async (resumeId: string, payload: CreateResumePayload): Promise<ResumeWithSections> => {
+    const res = await apiClient.put<ResumeWithSections>(`/resumes/${resumeId}`, payload);
     return res.data;
   },
 
@@ -185,5 +185,20 @@ export const resumesApi = {
 
   remove: async (resumeId: string) => {
     await apiClient.delete(`/resumes/${resumeId}`);
+  },
+
+  importPdf: async (
+    file: File,
+    name: string,
+    personaId?: string | null,
+  ): Promise<ResumeWithSections> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("name", name);
+    if (personaId) fd.append("persona_id", personaId);
+    const res = await apiClient.post<ResumeWithSections>("/resumes/import-pdf", fd, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return res.data;
   },
 };

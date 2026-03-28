@@ -1,7 +1,7 @@
 """Resume versions API endpoints."""
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -157,6 +157,95 @@ async def delete_resume(
     if not resume:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found")
     await db.delete(resume)
+
+
+# ---------------------------------------------------------------------------
+# Import resume from PDF (AI-parsed into sections)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/import-pdf", response_model=ResumeVersionResponse, status_code=status.HTTP_201_CREATED)
+async def import_resume_from_pdf(
+    file: UploadFile = File(...),
+    name: str = Form(...),
+    persona_id: str | None = Form(None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ResumeVersion:
+    """Upload a PDF resume → AI parses it into structured sections → saved as a new ResumeVersion."""
+    if not settings.OPENAI_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI features not configured",
+        )
+
+    content_type = file.content_type or ""
+    if not (content_type == "application/pdf" or (file.filename or "").lower().endswith(".pdf")):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only PDF files are accepted")
+
+    pdf_bytes = await file.read()
+    if len(pdf_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="PDF must be under 10 MB")
+
+    from app.services.resume_parser import extract_text_from_pdf, parse_resume_as_sections
+
+    try:
+        text = extract_text_from_pdf(pdf_bytes)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"PDF read error: {exc}") from exc
+
+    if not text.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Could not extract text from PDF — it may be a scanned/image-only file",
+        )
+
+    try:
+        sections = await parse_resume_as_sections(text)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"AI parsing failed: {exc}",
+        ) from exc
+
+    profile_result = await db.execute(
+        select(CandidateProfile).where(CandidateProfile.user_id == current_user.id)
+    )
+    profile = profile_result.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Create a candidate profile first before importing resumes",
+        )
+
+    parsed_persona_uuid: UUID | None = None
+    if persona_id:
+        try:
+            parsed_persona_uuid = UUID(persona_id)
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid persona_id format")
+        persona_result = await db.execute(
+            select(Persona).where(
+                Persona.id == parsed_persona_uuid,
+                Persona.user_id == current_user.id,
+            )
+        )
+        if not persona_result.scalar_one_or_none():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Persona not found")
+
+    resume = ResumeVersion(
+        user_id=current_user.id,
+        profile_id=profile.id,
+        name=name,
+        format="ats",
+        sections=sections,
+        persona_id=parsed_persona_uuid,
+        ai_tailored=True,
+    )
+    db.add(resume)
+    await db.flush()
+    await db.refresh(resume)
+    return resume
 
 
 # ---------------------------------------------------------------------------
