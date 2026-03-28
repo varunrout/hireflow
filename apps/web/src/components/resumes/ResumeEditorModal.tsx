@@ -252,10 +252,18 @@ export function ResumeEditorModal({ isOpen, resumeId, personaName, onClose }: Re
     <div className="fixed inset-0 z-50 bg-black/60 print:bg-transparent">
       <style jsx global>{`
         @media print {
+          /* ── Remove browser chrome (headers, footers, URL, date) ── */
+          @page {
+            margin: 0.5in;
+            size: letter;
+          }
+
+          /* ── Isolate the resume preview for printing ── */
           body * {
             visibility: hidden;
           }
-          .resume-print-scope, .resume-print-scope * {
+          .resume-print-scope,
+          .resume-print-scope * {
             visibility: visible;
           }
           .resume-print-scope {
@@ -265,13 +273,43 @@ export function ResumeEditorModal({ isOpen, resumeId, personaName, onClose }: Re
             width: 100%;
             background: white;
           }
+
+          /* ── Section-level break control ── */
           .resume-section {
             break-inside: auto;
             page-break-inside: auto;
           }
+
+          /* ── Keep individual entries / items together ── */
           .resume-avoid-break {
             break-inside: avoid;
             page-break-inside: avoid;
+          }
+
+          /* ── Never split a heading from its content ── */
+          .resume-print-scope h1,
+          .resume-print-scope h2,
+          .resume-print-scope h3 {
+            break-after: avoid;
+            page-break-after: avoid;
+          }
+
+          /* ── Keep list items together ── */
+          .resume-print-scope li {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+
+          /* ── Orphan / widow control ── */
+          .resume-print-scope p {
+            orphans: 3;
+            widows: 3;
+          }
+
+          /* ── Utility: force page break before element ── */
+          .resume-page-break {
+            break-before: always;
+            page-break-before: always;
           }
         }
       `}</style>
