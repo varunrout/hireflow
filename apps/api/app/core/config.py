@@ -60,6 +60,13 @@ class Settings(BaseSettings):
     ADZUNA_COUNTRY: str = "us"
     REED_API_URL: str = "https://www.reed.co.uk/api/1.0/search"
     REED_API_KEY: str = ""
+    # The Muse — free, no key
+    MUSE_API_URL: str = "https://www.themuse.com/api/public/jobs"
+    # Arbeit Now — free, no key
+    ARBEITNOW_API_URL: str = "https://arbeitnow.com/api/job-board-api"
+    # JSearch (RapidAPI) — aggregates Indeed, LinkedIn, Glassdoor, Greenhouse
+    RAPIDAPI_KEY: str = ""
+    RAPIDAPI_JSEARCH_HOST: str = "jsearch.p.rapidapi.com"
 
     # CORS
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:3001"]

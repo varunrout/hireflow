@@ -19,37 +19,30 @@ class ExternalJobSearchService:
         remote_only: bool = False,
         limit: int = 20,
     ) -> list[dict[str, Any]]:
-        items: list[dict[str, Any]] = []
-
         async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
-            results = await asyncio.gather(
+            tasks = [
+                # Always-on free sources
                 self._safe_fetch(self._fetch_remotive(client, role=role, limit=limit)),
+                self._safe_fetch(self._fetch_muse(client, role=role, location=location, remote_only=remote_only, limit=limit)),
+                self._safe_fetch(self._fetch_arbeitnow(client, role=role, remote_only=remote_only, limit=limit)),
+                # Key-gated sources
                 self._safe_fetch(
-                    self._fetch_adzuna(
-                        client,
-                        role=role,
-                        location=location,
-                        remote_only=remote_only,
-                        limit=limit,
-                    )
-                )
-                if settings.ADZUNA_APP_ID and settings.ADZUNA_APP_KEY
-                else self._safe_fetch_empty(),
+                    self._fetch_adzuna(client, role=role, location=location, remote_only=remote_only, limit=limit)
+                ) if settings.ADZUNA_APP_ID and settings.ADZUNA_APP_KEY else self._safe_fetch_empty(),
                 self._safe_fetch(
-                    self._fetch_reed(
-                        client,
-                        role=role,
-                        location=location,
-                        remote_only=remote_only,
-                        limit=limit,
-                    )
-                )
-                if settings.REED_API_KEY
-                else self._safe_fetch_empty(),
-            )
+                    self._fetch_reed(client, role=role, location=location, remote_only=remote_only, limit=limit)
+                ) if settings.REED_API_KEY else self._safe_fetch_empty(),
+                # JSearch — covers Indeed, LinkedIn, Glassdoor, Greenhouse
+                self._safe_fetch(
+                    self._fetch_jsearch(client, role=role, location=location, remote_only=remote_only, limit=limit)
+                ) if settings.RAPIDAPI_KEY else self._safe_fetch_empty(),
+            ]
 
-            for provider_items in results:
-                items.extend(provider_items)
+            results = await asyncio.gather(*tasks)
+
+        items: list[dict[str, Any]] = []
+        for provider_items in results:
+            items.extend(provider_items)
 
         filtered = self._filter_and_dedupe(items, location=location, remote_only=remote_only)
         return filtered[:limit]
@@ -63,6 +56,9 @@ class ExternalJobSearchService:
     async def _safe_fetch_empty(self) -> list[dict[str, Any]]:
         return []
 
+    # ------------------------------------------------------------------
+    # Remotive — free, remote-only jobs
+    # ------------------------------------------------------------------
     async def _fetch_remotive(
         self, client: httpx.AsyncClient, role: str, limit: int
     ) -> list[dict[str, Any]]:
@@ -77,23 +73,180 @@ class ExternalJobSearchService:
         items: list[dict[str, Any]] = []
         for job in payload.get("jobs", [])[:limit]:
             job_type = str(job.get("job_type") or "").lower()
-            items.append(
-                {
-                    "provider": "remotive",
-                    "title": job.get("title") or "Untitled role",
-                    "company": job.get("company_name") or "Unknown company",
-                    "location": job.get("candidate_required_location"),
-                    "remote_type": "remote",
-                    "employment_type": self._map_employment_type(job_type),
-                    "description": self._strip_html(job.get("description") or ""),
-                    "source": "other",
-                    "source_url": job.get("url"),
-                    "source_job_id": str(job.get("id") or "") or None,
-                    "posted_at": self._parse_datetime(job.get("publication_date")),
-                    "requirements": [],
-                    "nice_to_haves": [],
-                }
-            )
+            items.append({
+                "provider": "remotive",
+                "title": job.get("title") or "Untitled role",
+                "company": job.get("company_name") or "Unknown company",
+                "location": job.get("candidate_required_location"),
+                "remote_type": "remote",
+                "employment_type": self._map_employment_type(job_type),
+                "description": self._strip_html(job.get("description") or ""),
+                "source": "other",
+                "source_url": job.get("url"),
+                "source_job_id": str(job.get("id") or "") or None,
+                "posted_at": self._parse_datetime(job.get("publication_date")),
+                "requirements": [],
+                "nice_to_haves": [],
+            })
+        return items
+
+    # ------------------------------------------------------------------
+    # The Muse — free, no key, US-focused quality companies
+    # ------------------------------------------------------------------
+    async def _fetch_muse(
+        self,
+        client: httpx.AsyncClient,
+        role: str,
+        location: str | None,
+        remote_only: bool,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {"page": 0, "descending": "true", "category": role}
+        if location:
+            params["location"] = location
+        if remote_only:
+            params["location"] = "Flexible / Remote"
+
+        response = await client.get(
+            settings.MUSE_API_URL,
+            params=params,
+            headers={"Accept": "application/json"},
+        )
+        response.raise_for_status()
+        payload = response.json()
+
+        items: list[dict[str, Any]] = []
+        for job in payload.get("results", [])[:limit]:
+            company = (job.get("company") or {}).get("name") or "Unknown company"
+            locations = job.get("locations") or []
+            loc_name = locations[0].get("name") if locations else None
+            is_remote = any("remote" in str(l.get("name", "")).lower() for l in locations)
+            levels = job.get("levels") or []
+            level_names = [l.get("name", "") for l in levels]
+            contents = self._strip_html(job.get("contents") or "")
+            items.append({
+                "provider": "themuse",
+                "title": job.get("name") or "Untitled role",
+                "company": company,
+                "location": loc_name,
+                "remote_type": "remote" if is_remote else None,
+                "employment_type": "full_time",
+                "description": contents,
+                "source": "other",
+                "source_url": job.get("refs", {}).get("landing_page"),
+                "source_job_id": str(job.get("id") or "") or None,
+                "posted_at": self._parse_datetime(job.get("publication_date")),
+                "requirements": level_names,
+                "nice_to_haves": [],
+            })
+        return items
+
+    # ------------------------------------------------------------------
+    # Arbeit Now — free, no key, global remote-friendly jobs
+    # ------------------------------------------------------------------
+    async def _fetch_arbeitnow(
+        self,
+        client: httpx.AsyncClient,
+        role: str,
+        remote_only: bool,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        response = await client.get(
+            settings.ARBEITNOW_API_URL,
+            headers={"Accept": "application/json"},
+        )
+        response.raise_for_status()
+        payload = response.json()
+
+        role_lower = role.lower()
+        items: list[dict[str, Any]] = []
+        for job in payload.get("data", []):
+            title = str(job.get("title") or "")
+            if role_lower not in title.lower() and role_lower not in str(job.get("description") or "").lower():
+                continue
+            is_remote = bool(job.get("remote"))
+            if remote_only and not is_remote:
+                continue
+            items.append({
+                "provider": "arbeitnow",
+                "title": title or "Untitled role",
+                "company": job.get("company_name") or "Unknown company",
+                "location": job.get("location"),
+                "remote_type": "remote" if is_remote else None,
+                "employment_type": None,
+                "description": self._strip_html(job.get("description") or ""),
+                "source": "other",
+                "source_url": job.get("url"),
+                "source_job_id": job.get("slug"),
+                "posted_at": self._parse_datetime(
+                    datetime.utcfromtimestamp(job["created_at"]).isoformat()
+                    if job.get("created_at") else None
+                ),
+                "requirements": job.get("tags") or [],
+                "nice_to_haves": [],
+            })
+            if len(items) >= limit:
+                break
+        return items
+
+    # ------------------------------------------------------------------
+    # JSearch (RapidAPI) — aggregates Indeed, LinkedIn, Glassdoor, Greenhouse
+    # ------------------------------------------------------------------
+    async def _fetch_jsearch(
+        self,
+        client: httpx.AsyncClient,
+        role: str,
+        location: str | None,
+        remote_only: bool,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        query = role
+        if location:
+            query += f" in {location}"
+        if remote_only:
+            query += " remote"
+
+        response = await client.get(
+            f"https://{settings.RAPIDAPI_JSEARCH_HOST}/search",
+            params={"query": query, "page": "1", "num_pages": "1", "per_page": str(limit)},
+            headers={
+                "X-RapidAPI-Key": settings.RAPIDAPI_KEY,
+                "X-RapidAPI-Host": settings.RAPIDAPI_JSEARCH_HOST,
+            },
+        )
+        response.raise_for_status()
+        payload = response.json()
+
+        items: list[dict[str, Any]] = []
+        for job in payload.get("data", [])[:limit]:
+            is_remote = bool(job.get("job_is_remote"))
+            if remote_only and not is_remote:
+                continue
+            # Map publisher to source enum
+            publisher = str(job.get("job_publisher") or "").lower()
+            source = "indeed" if "indeed" in publisher else \
+                     "linkedin" if "linkedin" in publisher else \
+                     "glassdoor" if "glassdoor" in publisher else \
+                     "greenhouse" if "greenhouse" in publisher else "other"
+            items.append({
+                "provider": f"jsearch/{job.get('job_publisher', 'unknown')}",
+                "title": job.get("job_title") or "Untitled role",
+                "company": job.get("employer_name") or "Unknown company",
+                "location": job.get("job_city") or job.get("job_state") or job.get("job_country"),
+                "remote_type": "remote" if is_remote else None,
+                "employment_type": self._map_employment_type(
+                    str(job.get("job_employment_type") or "").lower().replace(" ", "_")
+                ),
+                "description": self._strip_html(job.get("job_description") or ""),
+                "source": source,
+                "source_url": job.get("job_apply_link") or job.get("job_google_link"),
+                "source_job_id": job.get("job_id"),
+                "posted_at": self._parse_datetime(
+                    job.get("job_posted_at_datetime_utc")
+                ),
+                "requirements": job.get("job_highlights", {}).get("Qualifications") or [],
+                "nice_to_haves": job.get("job_highlights", {}).get("Responsibilities") or [],
+            })
         return items
 
     async def _fetch_adzuna(
