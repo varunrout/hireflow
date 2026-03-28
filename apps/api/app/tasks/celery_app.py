@@ -18,3 +18,10 @@ celery.conf.update(
     timezone="UTC",
     enable_utc=True,
 )
+
+# Upstash Redis uses rediss:// (TLS) — Celery needs explicit SSL settings
+if settings.CELERY_BROKER_URL.startswith("rediss://"):
+    celery.conf.broker_use_ssl = {"ssl_cert_reqs": "CERT_NONE"}
+
+if settings.CELERY_RESULT_BACKEND.startswith("rediss://"):
+    celery.conf.redis_backend_use_ssl = {"ssl_cert_reqs": "CERT_NONE"}
