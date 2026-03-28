@@ -272,6 +272,29 @@ export function ResumeEditorModal({ isOpen, resumeId, personaName, onClose }: Re
             top: 0;
             width: 100%;
             background: white;
+            overflow: visible !important;
+            height: auto !important;
+            max-height: none !important;
+          }
+
+          /* ── Remove all height/overflow constraints from ancestors ── */
+          .resume-print-scope *,
+          .resume-print-scope {
+            overflow: visible !important;
+          }
+          html, body {
+            height: auto !important;
+            overflow: visible !important;
+          }
+          /* Parent containers that clip to viewport */
+          .fixed, [class*="absolute"], [class*="grid"],
+          .resume-print-scope,
+          .resume-print-scope > * {
+            position: static !important;
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+            min-height: 0 !important;
           }
 
           /* ── Section-level break control ── */
