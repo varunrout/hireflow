@@ -44,7 +44,7 @@ export default function AnalyticsPage() {
           </p>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
           <div className="rounded-lg border bg-card p-6 md:col-span-1">
             <p className="text-sm text-muted-foreground">Total applications</p>
             <p className="mt-2 text-4xl font-bold">{analyticsQuery.data?.total_applications ?? 0}</p>

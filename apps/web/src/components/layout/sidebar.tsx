@@ -28,7 +28,12 @@ const NAV_ITEMS = [
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
 ];
 
-export function Sidebar() {
+type SidebarProps = {
+  isOpen?: boolean;
+  onClose?: () => void;
+};
+
+export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const router = useRouter();
 
   const handleLogout = async () => {
@@ -38,7 +43,18 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="flex h-screen w-64 flex-col border-r bg-card">
+    <aside
+      className={[
+        // Base
+        "flex h-screen w-64 flex-col border-r bg-card",
+        // Desktop: always visible
+        "hidden md:flex",
+        // Mobile: fixed overlay, slide in when open
+        isOpen
+          ? "!flex fixed inset-y-0 left-0 z-40 shadow-xl"
+          : "",
+      ].join(" ")}
+    >
       <div className="flex h-16 items-center border-b px-6">
         <span className="text-xl font-bold text-primary">HireFlow</span>
       </div>
@@ -47,6 +63,7 @@ export function Sidebar() {
           <Link
             key={href}
             href={href}
+            onClick={onClose}
             className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
           >
             <Icon className="h-4 w-4" />
@@ -57,6 +74,7 @@ export function Sidebar() {
       <div className="border-t p-4">
         <Link
           href="/settings"
+          onClick={onClose}
           className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent"
         >
           <Settings className="h-4 w-4" />
