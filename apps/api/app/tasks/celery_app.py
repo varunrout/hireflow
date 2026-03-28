@@ -1,4 +1,6 @@
 """Celery application configuration."""
+import ssl
+
 from celery import Celery
 
 from app.core.config import get_settings
@@ -21,7 +23,7 @@ celery.conf.update(
 
 # Upstash Redis uses rediss:// (TLS) — Celery needs explicit SSL settings
 if settings.CELERY_BROKER_URL.startswith("rediss://"):
-    celery.conf.broker_use_ssl = {"ssl_cert_reqs": "CERT_NONE"}
+    celery.conf.broker_use_ssl = {"ssl_cert_reqs": ssl.CERT_NONE}
 
 if settings.CELERY_RESULT_BACKEND.startswith("rediss://"):
-    celery.conf.redis_backend_use_ssl = {"ssl_cert_reqs": "CERT_NONE"}
+    celery.conf.redis_backend_use_ssl = {"ssl_cert_reqs": ssl.CERT_NONE}
