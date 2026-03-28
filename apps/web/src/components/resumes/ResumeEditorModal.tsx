@@ -243,101 +243,87 @@ export function ResumeEditorModal({ isOpen, resumeId, personaName, onClose }: Re
   }
 
   function printResume() {
-    window.print();
+    const el = document.querySelector(".resume-print-root");
+    if (!el) return;
+
+    const printWin = window.open("", "print-resume", "width=900,height=1200");
+    if (!printWin) return;
+
+    // Gather all stylesheets so Tailwind classes keep working
+    const sheets = Array.from(
+      document.querySelectorAll('link[rel="stylesheet"], style'),
+    )
+      .map((n) => n.outerHTML)
+      .join("\n");
+
+    printWin.document.write(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Resume</title>
+${sheets}
+<style>
+  @page {
+    margin: 0.4in 0.5in;
+    size: letter;
+  }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: white;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  /* Page-break rules */
+  h1, h2, h3 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  li, .resume-avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .resume-section {
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+  p {
+    orphans: 3;
+    widows: 3;
+  }
+  .resume-page-break {
+    break-before: always;
+    page-break-before: always;
+  }
+</style>
+</head>
+<body>
+${el.outerHTML}
+</body>
+</html>`);
+
+    printWin.document.close();
+
+    // Wait for styles to load, then print
+    const triggerPrint = () => {
+      printWin.focus();
+      printWin.print();
+    };
+    if (printWin.document.readyState === "complete") {
+      triggerPrint();
+    } else {
+      printWin.onload = triggerPrint;
+      // Fallback if onload doesn't fire
+      setTimeout(triggerPrint, 800);
+    }
   }
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 print:bg-transparent">
-      <style jsx global>{`
-        @media print {
-          /* ── Remove browser chrome (headers, footers, URL, date) ── */
-          @page {
-            margin: 0.5in;
-            size: letter;
-          }
+    <div className="fixed inset-0 z-50 bg-black/60">
 
-          /* ── Isolate the resume preview for printing ── */
-          body * {
-            visibility: hidden;
-          }
-          .resume-print-scope,
-          .resume-print-scope * {
-            visibility: visible;
-          }
-          .resume-print-scope {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            background: white;
-            overflow: visible !important;
-            height: auto !important;
-            max-height: none !important;
-          }
-
-          /* ── Remove all height/overflow constraints from ancestors ── */
-          .resume-print-scope *,
-          .resume-print-scope {
-            overflow: visible !important;
-          }
-          html, body {
-            height: auto !important;
-            overflow: visible !important;
-          }
-          /* Parent containers that clip to viewport */
-          .fixed, [class*="absolute"], [class*="grid"],
-          .resume-print-scope,
-          .resume-print-scope > * {
-            position: static !important;
-            height: auto !important;
-            max-height: none !important;
-            overflow: visible !important;
-            min-height: 0 !important;
-          }
-
-          /* ── Section-level break control ── */
-          .resume-section {
-            break-inside: auto;
-            page-break-inside: auto;
-          }
-
-          /* ── Keep individual entries / items together ── */
-          .resume-avoid-break {
-            break-inside: avoid;
-            page-break-inside: avoid;
-          }
-
-          /* ── Never split a heading from its content ── */
-          .resume-print-scope h1,
-          .resume-print-scope h2,
-          .resume-print-scope h3 {
-            break-after: avoid;
-            page-break-after: avoid;
-          }
-
-          /* ── Keep list items together ── */
-          .resume-print-scope li {
-            break-inside: avoid;
-            page-break-inside: avoid;
-          }
-
-          /* ── Orphan / widow control ── */
-          .resume-print-scope p {
-            orphans: 3;
-            widows: 3;
-          }
-
-          /* ── Utility: force page break before element ── */
-          .resume-page-break {
-            break-before: always;
-            page-break-before: always;
-          }
-        }
-      `}</style>
-
-      <div className="absolute inset-4 flex flex-col rounded-xl bg-background shadow-2xl print:inset-0 print:rounded-none print:shadow-none">
+      <div className="absolute inset-4 flex flex-col rounded-xl bg-background shadow-2xl">
         <div className="flex items-center justify-between border-b px-5 py-3 print:hidden">
           <div>
             <h2 className="text-lg font-semibold">Resume Editor</h2>
@@ -432,7 +418,7 @@ export function ResumeEditorModal({ isOpen, resumeId, personaName, onClose }: Re
             </div>
           </aside>
 
-          <main className="resume-print-scope overflow-auto bg-gray-100 p-4 dark:bg-gray-950 print:bg-white print:p-0">
+          <main className="overflow-auto bg-gray-100 p-4 dark:bg-gray-950">
             {resumeQuery.isLoading && (
               <div className="mx-auto h-[80vh] max-w-[680px] animate-pulse rounded bg-gray-200 dark:bg-gray-800" />
             )}
