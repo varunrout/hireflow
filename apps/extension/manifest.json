@@ -8,7 +8,7 @@
   "host_permissions": ["https://*.linkedin.com/*", "https://*.greenhouse.io/*", "https://*.lever.co/*", "https://*.workday.com/*", "https://*.indeed.com/*"],
 
   "background": {
-    "service_worker": "dist/background/index.js",
+    "service_worker": "background/index.js",
     "type": "module"
   },
 
@@ -21,7 +21,7 @@
         "https://*.workday.com/*/job/*",
         "https://*.indeed.com/apply*"
       ],
-      "js": ["dist/content/index.js"],
+      "js": ["content/index.js"],
       "run_at": "document_idle"
     }
   ],

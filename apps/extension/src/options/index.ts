@@ -1,22 +1,22 @@
-import { getApiUrl } from "../shared/storage";
-
-const STORAGE_KEY = "hireflow_api_url";
-const DEFAULT_URL = "https://hireflow-j68z.onrender.com";
+import { getApiUrl, setApiUrl, getWebUrl, setWebUrl } from "../shared/storage";
 
 async function init(): Promise<void> {
   const apiUrlInput = document.getElementById("api-url") as HTMLInputElement;
+  const webUrlInput = document.getElementById("web-url") as HTMLInputElement;
   const saveBtn = document.getElementById("save-btn") as HTMLButtonElement;
   const status = document.getElementById("status")!;
 
-  // Load saved URL
-  const saved = await getApiUrl();
-  apiUrlInput.value = saved || DEFAULT_URL;
+  // Load saved URLs
+  const [savedApi, savedWeb] = await Promise.all([getApiUrl(), getWebUrl()]);
+  apiUrlInput.value = savedApi;
+  webUrlInput.value = savedWeb;
 
   saveBtn.addEventListener("click", async () => {
-    const url = apiUrlInput.value.trim().replace(/\/$/, "");
-    if (!url) return;
+    const apiUrl = apiUrlInput.value.trim().replace(/\/$/, "");
+    const webUrl = webUrlInput.value.trim().replace(/\/$/, "");
+    if (!apiUrl || !webUrl) return;
 
-    await chrome.storage.local.set({ [STORAGE_KEY]: url });
+    await Promise.all([setApiUrl(apiUrl), setWebUrl(webUrl)]);
 
     status.classList.add("visible");
     setTimeout(() => status.classList.remove("visible"), 2000);

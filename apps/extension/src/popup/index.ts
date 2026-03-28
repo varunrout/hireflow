@@ -1,4 +1,4 @@
-import { getApiUrl, isAuthenticated, clearTokens } from "../shared/storage";
+import { getApiUrl, getWebUrl, isAuthenticated, clearTokens } from "../shared/storage";
 
 const SUPPORTED_PLATFORMS: Record<string, string> = {
   linkedin: "LinkedIn",
@@ -19,9 +19,9 @@ async function init(): Promise<void> {
   const loading = document.getElementById("loading")!;
   const main = document.getElementById("main")!;
 
-  const [authenticated, apiUrl] = await Promise.all([
+  const [authenticated, webUrl] = await Promise.all([
     isAuthenticated(),
-    getApiUrl(),
+    getWebUrl(),
   ]);
 
   // Auth status
@@ -60,9 +60,7 @@ async function init(): Promise<void> {
 
   // Open app link
   const openApp = document.getElementById("open-app") as HTMLAnchorElement;
-  // Use the web app URL (strip /api prefix from API URL)
-  const webUrl = apiUrl.replace(/\/api.*$/, "").replace("localhost:8000", "localhost:3000");
-  openApp.href = webUrl || "https://hireflow.vercel.app";
+  openApp.href = webUrl || "http://localhost:3000";
 
   // Logout
   logoutBtn.addEventListener("click", async () => {

@@ -6,8 +6,10 @@
 const TOKEN_KEY = "hireflow_access_token";
 const REFRESH_KEY = "hireflow_refresh_token";
 const API_URL_KEY = "hireflow_api_url";
+const WEB_APP_URL_KEY = "hireflow_web_url";
 
 const DEFAULT_API_URL = "https://hireflow-j68z.onrender.com";
+const DEFAULT_WEB_URL = "http://localhost:3000";
 
 export async function getAccessToken(): Promise<string | null> {
   const result = await chrome.storage.local.get(TOKEN_KEY);
@@ -37,6 +39,15 @@ export async function getApiUrl(): Promise<string> {
 
 export async function setApiUrl(url: string): Promise<void> {
   await chrome.storage.local.set({ [API_URL_KEY]: url });
+}
+
+export async function getWebUrl(): Promise<string> {
+  const result = await chrome.storage.local.get(WEB_APP_URL_KEY);
+  return (result[WEB_APP_URL_KEY] as string) ?? DEFAULT_WEB_URL;
+}
+
+export async function setWebUrl(url: string): Promise<void> {
+  await chrome.storage.local.set({ [WEB_APP_URL_KEY]: url });
 }
 
 export async function isAuthenticated(): Promise<boolean> {

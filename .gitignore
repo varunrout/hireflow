@@ -61,3 +61,4 @@ exports/
 
 # Alembic
 apps/api/alembic/versions/*.pyc
+apps/api/.env*
