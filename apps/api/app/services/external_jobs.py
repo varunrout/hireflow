@@ -10,6 +10,47 @@ import httpx
 
 from app.core.config import settings
 
+# ISO country code → full name (for location matching)
+_COUNTRY_NAMES: dict[str, str] = {
+    "GB": "United Kingdom", "US": "United States", "CA": "Canada",
+    "AU": "Australia", "DE": "Germany", "FR": "France", "NL": "Netherlands",
+    "IN": "India", "SG": "Singapore", "IE": "Ireland", "SE": "Sweden",
+    "CH": "Switzerland", "ES": "Spain", "IT": "Italy", "PL": "Poland",
+    "PT": "Portugal", "BE": "Belgium", "DK": "Denmark", "NO": "Norway",
+    "FI": "Finland", "AT": "Austria", "NZ": "New Zealand", "ZA": "South Africa",
+    "BR": "Brazil", "MX": "Mexico", "AE": "United Arab Emirates", "JP": "Japan",
+}
+
+# The Muse uses fixed category names — map common role keywords
+_MUSE_CATEGORY_MAP: dict[str, str] = {
+    "data scientist": "Data Science",
+    "data science": "Data Science",
+    "data analyst": "Data Science",
+    "data engineer": "Data Science",
+    "machine learning": "Data Science",
+    "software engineer": "Software Engineer",
+    "software developer": "Software Engineer",
+    "frontend": "Software Engineer",
+    "backend": "Software Engineer",
+    "fullstack": "Software Engineer",
+    "full stack": "Software Engineer",
+    "product manager": "Product",
+    "product management": "Product",
+    "designer": "Design & UX",
+    "ux": "Design & UX",
+    "ui": "Design & UX",
+    "devops": "DevOps & Sysadmin",
+    "cloud": "DevOps & Sysadmin",
+    "marketing": "Marketing & PR",
+    "sales": "Sales",
+    "finance": "Finance",
+    "hr": "HR & Recruiting",
+    "recruiter": "HR & Recruiting",
+    "legal": "Legal",
+    "operations": "Operations",
+    "analyst": "Data Science",
+}
+
 
 class ExternalJobSearchService:
     async def search_jobs(
@@ -101,11 +142,18 @@ class ExternalJobSearchService:
         remote_only: bool,
         limit: int,
     ) -> list[dict[str, Any]]:
-        params: dict[str, Any] = {"page": 0, "descending": "true", "category": role}
-        if location:
-            params["location"] = location
+        # Map role to Muse's fixed category taxonomy
+        role_lower = role.lower()
+        muse_category = next(
+            (cat for keyword, cat in _MUSE_CATEGORY_MAP.items() if keyword in role_lower),
+            role,  # fall back to raw role string
+        )
+
+        params: dict[str, Any] = {"page": 0, "descending": "true", "category": muse_category}
         if remote_only:
             params["location"] = "Flexible / Remote"
+        # The Muse has limited non-US locations; don't filter by location server-side
+        # (filter client-side via _filter_and_dedupe)
 
         response = await client.get(
             settings.MUSE_API_URL,
@@ -156,6 +204,8 @@ class ExternalJobSearchService:
             headers={"Accept": "application/json"},
         )
         response.raise_for_status()
+        if not response.text.strip():
+            return []
         payload = response.json()
 
         role_lower = role.lower()
@@ -232,7 +282,12 @@ class ExternalJobSearchService:
                 "provider": f"jsearch/{job.get('job_publisher', 'unknown')}",
                 "title": job.get("job_title") or "Untitled role",
                 "company": job.get("employer_name") or "Unknown company",
-                "location": job.get("job_city") or job.get("job_state") or job.get("job_country"),
+                # Build full location: "London, United Kingdom" so filter can match
+                "location": ", ".join(filter(None, [
+                    job.get("job_city"),
+                    job.get("job_state"),
+                    _COUNTRY_NAMES.get(job.get("job_country") or "", job.get("job_country")),
+                ])) or None,
                 "remote_type": "remote" if is_remote else None,
                 "employment_type": self._map_employment_type(
                     str(job.get("job_employment_type") or "").lower().replace(" ", "_")
@@ -355,13 +410,28 @@ class ExternalJobSearchService:
         filtered: list[dict[str, Any]] = []
         seen: set[str] = set()
         location_lower = location.lower() if location else None
+        # Build a set of tokens from location for partial matching
+        # e.g. "United Kingdom" → {"united", "kingdom", "uk", "gb"}
+        location_tokens: set[str] = set()
+        if location_lower:
+            location_tokens = set(location_lower.split())
+            # Add reverse alias: if searching "united kingdom", also match "gb"
+            for code, name in _COUNTRY_NAMES.items():
+                if name.lower() == location_lower:
+                    location_tokens.add(code.lower())
+                    break
 
         for item in items:
             if remote_only and item.get("remote_type") != "remote":
                 continue
-            item_location = str(item.get("location") or "")
-            if location_lower and location_lower not in item_location.lower() and item.get("remote_type") != "remote":
-                continue
+
+            if location_tokens:
+                item_location = str(item.get("location") or "").lower()
+                is_remote = item.get("remote_type") == "remote"
+                # Pass if: remote, OR any location token found in item's location string
+                location_match = any(tok in item_location for tok in location_tokens)
+                if not is_remote and not location_match:
+                    continue
 
             key = str(item.get("source_url") or f"{item.get('title')}::{item.get('company')}").lower()
             if key in seen:
