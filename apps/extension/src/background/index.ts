@@ -47,21 +47,15 @@ async function handleMessage(message: ExtensionMessage): Promise<ExtensionRespon
     }
 
     case "GET_AUTOFILL_SUGGESTIONS": {
-      const { jobUrl, formFields, profileId } = message.payload as {
+      const { jobUrl, formFields } = message.payload as {
         jobUrl: string;
         formFields: unknown[];
-        profileId?: string;
       };
-      // In a full implementation, this would call the backend autofill service
-      // For now, return empty suggestions as a safe default
-      return {
-        success: true,
-        data: {
-          suggestions: [],
-          jobUrl,
-          formFieldsCount: formFields.length,
-        },
-      };
+      const suggestions = await extensionFetch("/autofill/suggest", {
+        method: "POST",
+        body: JSON.stringify({ job_url: jobUrl, fields: formFields }),
+      });
+      return { success: true, data: suggestions };
     }
 
     case "CREATE_APPLICATION": {

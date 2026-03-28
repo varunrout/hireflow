@@ -96,7 +96,7 @@ function injectHireFlowButton(): void {
   });
 
   btn.addEventListener("click", async () => {
-    btn.textContent = "⚡ Loading...";
+    btn.textContent = "⚡ Filling...";
     btn.disabled = true;
 
     const message: ExtensionMessage = {
@@ -110,20 +110,109 @@ function injectHireFlowButton(): void {
 
     chrome.runtime.sendMessage(message, (response: ExtensionResponse) => {
       if (!response.success) {
-        btn.textContent = "⚡ Error - Try again";
+        btn.textContent = "⚡ Error – try again";
         btn.disabled = false;
         console.error("[HireFlow] Autofill error:", response.error);
+        showToast("❌ Autofill failed: " + response.error, "error");
         return;
       }
 
-      // TODO: Show review modal before applying
-      btn.textContent = "⚡ HireFlow Autofill";
-      btn.disabled = false;
-      console.log("[HireFlow] Autofill suggestions:", response.data);
+      const data = response.data as {
+        suggestions: Array<{ field_id: string; suggested_value: string; confidence: number }>;
+        fields_filled: number;
+        fields_detected: number;
+      };
+
+      const filled = applyFieldSuggestions(data.suggestions);
+
+      // Record the application in HireFlow
+      chrome.runtime.sendMessage(
+        {
+          type: "CREATE_APPLICATION",
+          payload: { job_posting_id: null, source: "extension", notes: `Auto-applied via extension on ${window.location.hostname}` },
+          requestId: crypto.randomUUID(),
+        } satisfies ExtensionMessage,
+        () => {} // fire-and-forget
+      );
+
+      showToast(`✅ Filled ${filled} fields · Saved to HireFlow`, "success");
+      btn.textContent = "✅ Filled!";
+      setTimeout(() => {
+        btn.textContent = "⚡ HireFlow Autofill";
+        btn.disabled = false;
+      }, 3000);
+
+      console.log("[HireFlow] Autofill complete:", data);
     });
   });
 
   document.body.appendChild(btn);
+}
+
+/**
+ * Write suggestion values into the real DOM inputs and fire synthetic events
+ * so React/Vue/Angular controlled forms pick up the changes.
+ */
+function applyFieldSuggestions(
+  suggestions: Array<{ field_id: string; suggested_value: string }>
+): number {
+  let filled = 0;
+
+  for (const suggestion of suggestions) {
+    const el = (
+      document.getElementById(suggestion.field_id) ??
+      document.querySelector<HTMLElement>(`[name="${suggestion.field_id}"]`)
+    ) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
+
+    if (!el || el.disabled || el.readOnly) continue;
+
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+      el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype,
+      "value"
+    )?.set;
+
+    if (nativeInputValueSetter) {
+      nativeInputValueSetter.call(el, suggestion.suggested_value);
+    } else {
+      (el as HTMLInputElement).value = suggestion.suggested_value;
+    }
+
+    // Fire events so controlled component frameworks register the change
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    filled++;
+  }
+
+  return filled;
+}
+
+/**
+ * Inject a small toast notification in the bottom-left corner.
+ */
+function showToast(message: string, type: "success" | "error"): void {
+  const existing = document.getElementById("hireflow-toast");
+  if (existing) existing.remove();
+
+  const toast = document.createElement("div");
+  toast.id = "hireflow-toast";
+  toast.textContent = message;
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 80px;
+    right: 24px;
+    z-index: 99999;
+    background: ${type === "success" ? "#166534" : "#991b1b"};
+    color: white;
+    border-radius: 8px;
+    padding: 12px 18px;
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    max-width: 300px;
+    line-height: 1.4;
+  `;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 4000);
 }
 
 // Initialize
