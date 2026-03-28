@@ -246,83 +246,87 @@ export function ResumeEditorModal({ isOpen, resumeId, personaName, onClose }: Re
     const el = document.querySelector(".resume-print-root");
     if (!el) return;
 
-    const printWin = window.open("", "print-resume", "width=900,height=1200");
+    const printWin = window.open("", "_blank", "width=900,height=1200");
     if (!printWin) return;
 
-    // Extract ALL computed CSS rules (not link tags — those use relative URLs
-    // that won't resolve in the popup's about:blank origin).
-    const cssTexts: string[] = [];
+    const doc = printWin.document;
+    doc.open();
+    doc.write("<!DOCTYPE html><html><head><meta charset='utf-8'><title>Resume</title></head><body></body></html>");
+    doc.close();
+
+    // 1. Copy all <link rel="stylesheet"> with absolute href
+    document.querySelectorAll('link[rel="stylesheet"]').forEach((link) => {
+      const el = doc.createElement("link");
+      el.rel = "stylesheet";
+      el.href = (link as HTMLLinkElement).href; // .href is always absolute
+      doc.head.appendChild(el);
+    });
+
+    // 2. Inline all readable CSS rules (handles <style> tags and same-origin sheets)
+    const inlineStyle = doc.createElement("style");
+    const cssChunks: string[] = [];
     for (const sheet of Array.from(document.styleSheets)) {
       try {
-        const rules = sheet.cssRules || sheet.rules;
+        const rules = sheet.cssRules;
         if (rules) {
-          for (const rule of Array.from(rules)) {
-            cssTexts.push(rule.cssText);
+          for (let i = 0; i < rules.length; i++) {
+            cssChunks.push(rules[i]!.cssText);
           }
         }
       } catch {
-        // Cross-origin sheets can't be read — fall back to the link tag
-        if (sheet.href) {
-          cssTexts.push(`@import url("${sheet.href}");`);
-        }
+        // Cross-origin — already handled by the <link> copy above
       }
     }
+    inlineStyle.textContent = cssChunks.join("\n");
+    doc.head.appendChild(inlineStyle);
 
-    printWin.document.write(`<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8" />
-<title>Resume</title>
-<style>
-${cssTexts.join("\n")}
-</style>
-<style>
-  @page {
-    margin: 0.4in 0.5in;
-    size: letter;
-  }
-  html, body {
-    margin: 0;
-    padding: 0;
-    background: white;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-  /* Page-break rules */
-  h1, h2, h3 {
-    break-after: avoid;
-    page-break-after: avoid;
-  }
-  li, .resume-avoid-break {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-  .resume-section {
-    break-inside: auto;
-    page-break-inside: auto;
-  }
-  p {
-    orphans: 3;
-    widows: 3;
-  }
-  .resume-page-break {
-    break-before: always;
-    page-break-before: always;
-  }
-</style>
-</head>
-<body>
-${el.outerHTML}
-</body>
-</html>`);
+    // 3. Print-specific overrides
+    const printStyle = doc.createElement("style");
+    printStyle.textContent = [
+      "@page { margin: 0.4in 0.5in; size: letter; }",
+      "html, body { margin: 0; padding: 0; background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }",
+      "h1, h2, h3 { break-after: avoid; page-break-after: avoid; }",
+      "li, .resume-avoid-break { break-inside: avoid; page-break-inside: avoid; }",
+      ".resume-section { break-inside: auto; page-break-inside: auto; }",
+      "p { orphans: 3; widows: 3; }",
+      ".resume-page-break { break-before: always; page-break-before: always; }",
+    ].join("\n");
+    doc.head.appendChild(printStyle);
 
-    printWin.document.close();
+    // 4. Inject the resume HTML
+    doc.body.innerHTML = el.outerHTML;
 
-    // Styles are inlined — no external loads needed, print immediately
-    setTimeout(() => {
-      printWin.focus();
-      printWin.print();
-    }, 300);
+    // 5. Wait for external stylesheets to load, then print
+    const links = Array.from(doc.querySelectorAll('link[rel="stylesheet"]'));
+    let loaded = 0;
+    const total = links.length;
+
+    const tryPrint = () => {
+      loaded++;
+      if (loaded >= total) {
+        setTimeout(() => {
+          printWin.focus();
+          printWin.print();
+        }, 200);
+      }
+    };
+
+    if (total === 0) {
+      setTimeout(() => {
+        printWin.focus();
+        printWin.print();
+      }, 200);
+    } else {
+      links.forEach((link) => {
+        link.addEventListener("load", tryPrint);
+        link.addEventListener("error", tryPrint);
+      });
+      // Fallback in case events don't fire
+      setTimeout(() => {
+        printWin.focus();
+        printWin.print();
+      }, 3000);
+    }
   }
 
   if (!isOpen) return null;
