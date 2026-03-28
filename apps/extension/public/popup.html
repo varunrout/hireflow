@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HireFlow</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 320px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f172a;
+      color: #f1f5f9;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 16px;
+      border-bottom: 1px solid #1e293b;
+    }
+    .logo { font-size: 20px; font-weight: 700; color: #3b82f6; }
+    .version { font-size: 11px; color: #64748b; margin-left: auto; }
+    .section { padding: 14px 16px; border-bottom: 1px solid #1e293b; }
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+    }
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot.green { background: #22c55e; }
+    .dot.red { background: #ef4444; }
+    .dot.yellow { background: #eab308; }
+    .label { color: #94a3b8; font-size: 12px; margin-bottom: 6px; }
+    .value { font-size: 13px; font-weight: 500; }
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+    }
+    .btn-primary { background: #3b82f6; color: white; }
+    .btn-primary:hover { background: #2563eb; }
+    .btn-ghost {
+      background: transparent;
+      color: #94a3b8;
+      border: 1px solid #1e293b;
+      margin-top: 8px;
+    }
+    .btn-ghost:hover { background: #1e293b; }
+    .footer { padding: 12px 16px; }
+    .platform-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 11px;
+      font-weight: 600;
+      background: #1e3a5f;
+      color: #60a5fa;
+    }
+    .platform-badge.unsupported { background: #1e1e2e; color: #64748b; }
+    #loading { padding: 24px 16px; text-align: center; color: #64748b; font-size: 13px; }
+    #main { display: none; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span class="logo">⚡ HireFlow</span>
+    <span class="version">v0.1.0</span>
+  </div>
+
+  <div id="loading">Loading...</div>
+
+  <div id="main">
+    <div class="section">
+      <div class="label">Status</div>
+      <div class="status-row">
+        <div class="dot" id="auth-dot"></div>
+        <span id="auth-label"></span>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="label">Current page</div>
+      <div class="status-row">
+        <div class="dot" id="page-dot"></div>
+        <span id="page-label"></span>
+        &nbsp;
+        <span class="platform-badge" id="platform-badge"></span>
+      </div>
+    </div>
+
+    <div class="footer">
+      <a id="open-app" href="#" target="_blank" class="btn btn-primary">
+        Open HireFlow
+      </a>
+      <button id="logout-btn" class="btn btn-ghost" style="display:none">
+        Sign out
+      </button>
+    </div>
+  </div>
+
+  <script src="popup/index.js"></script>
+</body>
+</html>

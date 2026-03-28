@@ -20,7 +20,7 @@ chrome.runtime.onMessage.addListener(
         sendResponse({
           success: false,
           error: err instanceof Error ? err.message : "Unknown error",
-          requestId: message.requestId,
+          ...(message.requestId !== undefined ? { requestId: message.requestId } : {}),
         })
       );
 

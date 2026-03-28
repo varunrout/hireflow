@@ -25,14 +25,16 @@ function detectFormFields(): DetectedField[] {
 
   formElements.forEach((el) => {
     const label = findLabel(el);
+    const placeholder = (el as HTMLInputElement).placeholder || undefined;
+    const currentValue = el.value || undefined;
     fields.push({
       id: el.id || el.name || `field-${fields.length}`,
       name: el.name || el.id || "",
       label,
       type: el.tagName.toLowerCase() === "textarea" ? "textarea" : (el as HTMLInputElement).type || "text",
-      placeholder: (el as HTMLInputElement).placeholder || undefined,
+      ...(placeholder !== undefined ? { placeholder } : {}),
       required: el.required,
-      currentValue: el.value || undefined,
+      ...(currentValue !== undefined ? { currentValue } : {}),
     });
   });
 
@@ -164,7 +166,7 @@ function applyFieldSuggestions(
       document.querySelector<HTMLElement>(`[name="${suggestion.field_id}"]`)
     ) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
 
-    if (!el || el.disabled || el.readOnly) continue;
+    if (!el || el.disabled || (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement ? el.readOnly : false)) continue;
 
     const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
       el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype,

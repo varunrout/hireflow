@@ -7,7 +7,7 @@ const TOKEN_KEY = "hireflow_access_token";
 const REFRESH_KEY = "hireflow_refresh_token";
 const API_URL_KEY = "hireflow_api_url";
 
-const DEFAULT_API_URL = "http://localhost:8000";
+const DEFAULT_API_URL = "https://hireflow-j68z.onrender.com";
 
 export async function getAccessToken(): Promise<string | null> {
   const result = await chrome.storage.local.get(TOKEN_KEY);
