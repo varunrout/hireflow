@@ -63,7 +63,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
           <Link
             key={href}
             href={href}
-            onClick={onClose}
+            {...(onClose ? { onClick: onClose } : {})}
             className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
           >
             <Icon className="h-4 w-4" />
@@ -74,7 +74,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       <div className="border-t p-4">
         <Link
           href="/settings"
-          onClick={onClose}
+          {...(onClose ? { onClick: onClose } : {})}
           className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent"
         >
           <Settings className="h-4 w-4" />
