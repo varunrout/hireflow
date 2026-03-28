@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.db.session import get_db
-from app.models.models import CandidateProfile, ResumeTemplate, ResumeVersion, User
+from app.models.models import CandidateProfile, Persona, ResumeTemplate, ResumeVersion, User
 from app.schemas.schemas import (
     PaginatedResponse,
     ResumeVersionCreate,
@@ -48,10 +48,13 @@ async def create_resume(
 async def list_resumes(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
+    persona_id: UUID | None = Query(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     query = select(ResumeVersion).where(ResumeVersion.user_id == current_user.id)
+    if persona_id is not None:
+        query = query.where(ResumeVersion.persona_id == persona_id)
     count_result = await db.execute(select(func.count()).select_from(query.subquery()))
     total = count_result.scalar_one()
     offset = (page - 1) * limit

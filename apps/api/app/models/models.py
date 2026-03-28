@@ -143,6 +143,9 @@ class User(Base):
     resume_versions: Mapped[list["ResumeVersion"]] = relationship(
         "ResumeVersion", back_populates="user"
     )
+    personas: Mapped[list["Persona"]] = relationship(
+        "Persona", back_populates="user", cascade="all, delete-orphan"
+    )
     applications: Mapped[list["Application"]] = relationship(
         "Application", back_populates="user"
     )
@@ -409,6 +412,38 @@ class AutomationPipelineRun(Base):
 
 
 # ---------------------------------------------------------------------------
+# Persona
+# ---------------------------------------------------------------------------
+
+
+class Persona(Base):
+    __tablename__ = "personas"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    target_roles: Mapped[list] = mapped_column(ARRAY(String(200)), default=list)
+    color: Mapped[str | None] = mapped_column(String(20))  # hex color e.g. #3b82f6
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="personas")
+    resumes: Mapped[list["ResumeVersion"]] = relationship(
+        "ResumeVersion", back_populates="persona", foreign_keys="ResumeVersion.persona_id"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Resume
 # ---------------------------------------------------------------------------
 
@@ -451,6 +486,9 @@ class ResumeVersion(Base):
     job_posting_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("job_postings.id", ondelete="SET NULL")
     )
+    persona_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("personas.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     format: Mapped[ResumeFormatEnum] = mapped_column(Enum(ResumeFormatEnum), nullable=False)
     sections: Mapped[list] = mapped_column(JSONB, default=list)
@@ -468,6 +506,9 @@ class ResumeVersion(Base):
     )
 
     user: Mapped["User"] = relationship("User", back_populates="resume_versions")
+    persona: Mapped["Persona | None"] = relationship(
+        "Persona", back_populates="resumes", foreign_keys=[persona_id]
+    )
 
 
 class CoverLetterVersion(Base):

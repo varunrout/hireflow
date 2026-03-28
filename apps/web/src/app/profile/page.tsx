@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { CompletenessCard } from "@/components/profile/CompletenessCard";
 import { ImportPdfModal } from "@/components/profile/ImportPdfModal";
+import { PersonaSection } from "@/components/profile/PersonaSection";
 import {
   profileApi,
   type CandidatePreferencesPayload,
@@ -509,9 +510,10 @@ export default function ProfilePage() {
             </section>
           </div>
 
-          <section className="rounded-lg border bg-card p-6">
-            <div className="mb-6">
-              <h2 className="text-xl font-semibold">Skills</h2>
+          <div className="space-y-8">
+            <section className="rounded-lg border bg-card p-6">
+              <div className="mb-6">
+                <h2 className="text-xl font-semibold">Skills</h2>
               <p className="text-sm text-muted-foreground">
                 Add the core skills that should surface in resumes and job matching.
               </p>
@@ -614,6 +616,9 @@ export default function ProfilePage() {
               )}
             </div>
           </section>
+
+            <PersonaSection />
+          </div>
         </div>
       </div>
     </AppShell>

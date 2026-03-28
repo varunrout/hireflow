@@ -8,12 +8,17 @@ export type CreateResumePayload = {
   format: "ats" | "designed" | "tailored";
   template_id?: string | null;
   job_posting_id?: string | null;
+  persona_id?: string | null;
   sections?: Array<Record<string, unknown>>;
   theme_overrides?: Record<string, unknown> | null;
 };
 
 export const resumesApi = {
-  list: async (params?: { page?: number | undefined; limit?: number | undefined }) => {
+  list: async (params?: {
+    page?: number | undefined;
+    limit?: number | undefined;
+    persona_id?: string | undefined;
+  }) => {
     const res = await apiClient.get<PaginatedResult<ResumeVersion>>("/resumes", { params });
     return res.data;
   },

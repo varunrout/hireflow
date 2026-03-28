@@ -395,6 +395,7 @@ class ResumeVersionCreate(BaseSchema):
     format: str
     template_id: UUID | None = None
     job_posting_id: UUID | None = None
+    persona_id: UUID | None = None
     sections: list[dict] = []
     theme_overrides: dict | None = None
 
@@ -403,6 +404,7 @@ class ResumeVersionResponse(ResumeVersionCreate):
     id: UUID
     user_id: UUID
     profile_id: UUID
+    persona_id: UUID | None
     ai_tailored: bool
     ai_generation_metadata: dict | None
     status: str
@@ -514,3 +516,32 @@ class CompletenessResponse(BaseSchema):
     score: int
     sections: dict[str, SectionCompleteness]
     suggestions: list[str]
+
+
+# ---------------------------------------------------------------------------
+# Persona schemas
+# ---------------------------------------------------------------------------
+
+
+class PersonaCreate(BaseSchema):
+    name: str
+    description: str | None = None
+    target_roles: list[str] = []
+    color: str | None = None
+    is_default: bool = False
+
+
+class PersonaUpdate(BaseSchema):
+    name: str | None = None
+    description: str | None = None
+    target_roles: list[str] | None = None
+    color: str | None = None
+    is_default: bool | None = None
+
+
+class PersonaResponse(PersonaCreate):
+    id: UUID
+    user_id: UUID
+    resume_count: int = 0
+    created_at: datetime
+    updated_at: datetime
