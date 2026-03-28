@@ -249,19 +249,33 @@ export function ResumeEditorModal({ isOpen, resumeId, personaName, onClose }: Re
     const printWin = window.open("", "print-resume", "width=900,height=1200");
     if (!printWin) return;
 
-    // Gather all stylesheets so Tailwind classes keep working
-    const sheets = Array.from(
-      document.querySelectorAll('link[rel="stylesheet"], style'),
-    )
-      .map((n) => n.outerHTML)
-      .join("\n");
+    // Extract ALL computed CSS rules (not link tags — those use relative URLs
+    // that won't resolve in the popup's about:blank origin).
+    const cssTexts: string[] = [];
+    for (const sheet of Array.from(document.styleSheets)) {
+      try {
+        const rules = sheet.cssRules || sheet.rules;
+        if (rules) {
+          for (const rule of Array.from(rules)) {
+            cssTexts.push(rule.cssText);
+          }
+        }
+      } catch {
+        // Cross-origin sheets can't be read — fall back to the link tag
+        if (sheet.href) {
+          cssTexts.push(`@import url("${sheet.href}");`);
+        }
+      }
+    }
 
     printWin.document.write(`<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8" />
 <title>Resume</title>
-${sheets}
+<style>
+${cssTexts.join("\n")}
+</style>
 <style>
   @page {
     margin: 0.4in 0.5in;
@@ -304,18 +318,11 @@ ${el.outerHTML}
 
     printWin.document.close();
 
-    // Wait for styles to load, then print
-    const triggerPrint = () => {
+    // Styles are inlined — no external loads needed, print immediately
+    setTimeout(() => {
       printWin.focus();
       printWin.print();
-    };
-    if (printWin.document.readyState === "complete") {
-      triggerPrint();
-    } else {
-      printWin.onload = triggerPrint;
-      // Fallback if onload doesn't fire
-      setTimeout(triggerPrint, 800);
-    }
+    }, 300);
   }
 
   if (!isOpen) return null;
