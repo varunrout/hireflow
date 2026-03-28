@@ -125,7 +125,7 @@ const emptyForm: FormState = {
   name: "",
   description: "",
   target_roles: "",
-  color: PRESET_COLORS[0],
+  color: PRESET_COLORS[0]!,
   is_default: false,
 };
 
@@ -189,7 +189,7 @@ export function PersonaSection() {
       name: persona.name,
       description: persona.description ?? "",
       target_roles: persona.target_roles.join(", "),
-      color: persona.color ?? PRESET_COLORS[0],
+      color: persona.color ?? PRESET_COLORS[0]!,
       is_default: persona.is_default,
     });
     setShowForm(true);
