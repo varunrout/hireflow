@@ -127,6 +127,26 @@ def _salary_fits(
     return 0.5
 
 
+def _title_relevance(headline: str | None, job_title: str | None) -> float:
+    """Return 0.0–1.0 for how well the candidate headline matches the job title."""
+    if not headline or not job_title:
+        return 0.5  # neutral
+    h_words = set(_normalise(headline).split())
+    j_words = set(_normalise(job_title).split())
+    # Remove common stop words
+    stop = {"a", "an", "the", "and", "or", "of", "in", "at", "to", "for", "ii", "iii", "iv", "v"}
+    h_words -= stop
+    j_words -= stop
+    if not h_words or not j_words:
+        return 0.5
+    overlap = h_words & j_words
+    # Jaccard-like similarity with bias toward overlap count
+    if overlap:
+        ratio = len(overlap) / min(len(h_words), len(j_words))
+        return min(0.5 + ratio * 0.5, 1.0)
+    return 0.3
+
+
 def _compute_skill_score(
     candidate_skills: set[str],
     required_skills: list[str],
@@ -138,6 +158,9 @@ def _compute_skill_score(
     Returns (score 0-1, matching_skills, missing_skills).
     """
     if not candidate_skills:
+        # No skills on profile — give benefit of doubt if job also has none
+        if not required_skills and not preferred_skills:
+            return 0.65, [], []
         return 0.3, [], list(required_skills)
 
     normed_candidate = {_normalise(s) for s in candidate_skills}
@@ -175,8 +198,9 @@ def _compute_skill_score(
         if normed_candidate:
             ratio = min(desc_hits / max(len(normed_candidate), 1), 1.0)
             matching = [s for s in candidate_skills if _normalise(s) in normed_desc]
-            return 0.4 + ratio * 0.5, matching, []
-        return 0.4, [], []
+            # Higher base when job has no parsed skills (can't penalise what we don't know)
+            return 0.55 + ratio * 0.4, matching, []
+        return 0.55, [], []
 
     score = req_ratio * 0.7 + pref_ratio * 0.3
     return score, matching, missing
@@ -187,9 +211,9 @@ def _experience_score(
     required_years: int | None,
 ) -> float:
     if required_years is None:
-        return 0.7  # no info → neutral
+        return 0.8  # no info → benefit of doubt
     if years is None:
-        return 0.4  # user hasn't filled years
+        return 0.5  # user hasn't filled years
     if years >= required_years:
         return 1.0
     ratio = years / max(required_years, 1)
@@ -200,7 +224,7 @@ def _experience_score(
 
 def _education_score(candidate_level: int, required_level: int) -> float:
     if required_level == 0:
-        return 0.8  # no requirement → slight boost
+        return 0.9  # no requirement → benefit of doubt
     if candidate_level >= required_level:
         return 1.0
     if candidate_level == required_level - 1:
@@ -223,6 +247,7 @@ def score_job(
     candidate_years: int | None,
     candidate_education_level: int,
     candidate_location: str | None,
+    candidate_headline: str | None,
     pref: CandidatePreference | None,
     job: JobPosting,
     parse: JobParseResult | None,
@@ -253,10 +278,12 @@ def score_job(
         pref.min_salary if pref else None,
         pref.max_salary if pref else None,
     )
+    title_score = _title_relevance(candidate_headline, job.title)
 
-    # Weighted overall: skills 40%, experience 25%, education 10%, location 15%, salary 10%
+    # Weighted overall: skills 30%, title 10%, experience 25%, education 10%, location 15%, salary 10%
     overall = (
-        sk_score * 40
+        sk_score * 30
+        + title_score * 10
         + exp_score * 25
         + edu_score * 10
         + loc_score * 15
@@ -382,6 +409,7 @@ async def run_matching_for_user(
             candidate_years=candidate_years,
             candidate_education_level=candidate_edu_level,
             candidate_location=profile.location,
+            candidate_headline=profile.headline,
             pref=pref,
             job=job,
             parse=parse,
