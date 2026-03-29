@@ -149,6 +149,7 @@ export function ResumeEditorModal({ isOpen, resumeId, personaName, onClose }: Re
   const [rawJson, setRawJson] = useState("");
   const [editMode, setEditMode] = useState<"guided" | "json">("guided");
   const [design, setDesign] = useState<ResumeDesign>("classic");
+  const [mobileTab, setMobileTab] = useState<"preview" | "edit" | "ai">("preview");
   const [localSections, setLocalSections] = useState<ResumeSection[] | null>(null);
 
   const resumeQuery = useQuery({
@@ -230,6 +231,7 @@ export function ResumeEditorModal({ isOpen, resumeId, personaName, onClose }: Re
     setSelectedIndex(0);
     setJobDescription("");
     setEditMode("guided");
+    setMobileTab("preview");
     onClose();
   }
 
@@ -333,20 +335,20 @@ export function ResumeEditorModal({ isOpen, resumeId, personaName, onClose }: Re
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60">
-
-      <div className="absolute inset-4 flex flex-col rounded-xl bg-background shadow-2xl">
-        <div className="flex items-center justify-between border-b px-5 py-3 print:hidden">
-          <div>
-            <h2 className="text-lg font-semibold">Resume Editor</h2>
-            <p className="text-xs text-muted-foreground">
+      <div className="absolute inset-0 flex flex-col bg-background shadow-2xl lg:inset-4 lg:rounded-xl">
+        {/* ── Header ── */}
+        <div className="flex items-center justify-between border-b px-3 py-2 lg:px-5 lg:py-3 print:hidden">
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-semibold lg:text-lg">Resume Editor</h2>
+            <p className="hidden text-xs text-muted-foreground lg:block">
               Field-level editing, AI improvement, multiple designs, save and print.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 lg:gap-2">
             <select
               value={design}
               onChange={(e) => setDesign(e.target.value as ResumeDesign)}
-              className="rounded-lg border px-3 py-1.5 text-sm"
+              className="rounded-lg border px-2 py-1 text-sm lg:px-3 lg:py-1.5"
               title="Resume design"
             >
               <option value="classic">Classic</option>
@@ -356,21 +358,21 @@ export function ResumeEditorModal({ isOpen, resumeId, personaName, onClose }: Re
             <button
               onClick={() => seedMutation.mutate()}
               disabled={seedMutation.isPending || !resumeId}
-              className="rounded-lg border px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
+              className="hidden rounded-lg border px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50 lg:inline-flex"
             >
               {seedMutation.isPending ? "Seeding..." : "Seed from profile"}
             </button>
             <button
               onClick={() => saveMutation.mutate(effectiveSections)}
               disabled={saveMutation.isPending || !effectiveSections.length}
-              className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="rounded-lg bg-blue-600 px-2 py-1 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 lg:px-3 lg:py-1.5"
             >
               {saveMutation.isPending ? "Saving..." : "Save"}
             </button>
             <button
               onClick={printResume}
               disabled={!effectiveSections.length}
-              className="rounded-lg border px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
+              className="hidden rounded-lg border px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50 lg:inline-flex"
             >
               Print
             </button>
@@ -380,8 +382,10 @@ export function ResumeEditorModal({ isOpen, resumeId, personaName, onClose }: Re
           </div>
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-[240px_1fr_420px] print:block">
-          <aside className="overflow-y-auto border-r p-3 print:hidden">
+        {/* ── Content area: flex-col on mobile, 3-column grid on desktop ── */}
+        <div className="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-[240px_1fr_420px] print:block">
+          {/* ── Desktop-only sidebar ── */}
+          <aside className="hidden overflow-y-auto border-r p-3 print:hidden lg:block">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Sections
             </p>
@@ -429,7 +433,30 @@ export function ResumeEditorModal({ isOpen, resumeId, personaName, onClose }: Re
             </div>
           </aside>
 
-          <main className="overflow-auto bg-gray-100 p-4 dark:bg-gray-950">
+          {/* ── Preview panel ── */}
+          <main
+            className={`overflow-auto bg-gray-100 p-4 dark:bg-gray-950 ${
+              mobileTab === "preview" ? "min-h-0 flex-1" : "hidden"
+            } lg:block`}
+          >
+            {/* Mobile-only Seed & Print buttons */}
+            <div className="mb-3 flex gap-2 lg:hidden">
+              <button
+                onClick={() => seedMutation.mutate()}
+                disabled={seedMutation.isPending || !resumeId}
+                className="rounded-lg border bg-background px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
+              >
+                {seedMutation.isPending ? "Seeding..." : "Seed from profile"}
+              </button>
+              <button
+                onClick={printResume}
+                disabled={!effectiveSections.length}
+                className="rounded-lg border bg-background px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
+              >
+                Print
+              </button>
+            </div>
+
             {resumeQuery.isLoading && (
               <div className="mx-auto h-[80vh] max-w-[680px] animate-pulse rounded bg-gray-200 dark:bg-gray-800" />
             )}
@@ -443,123 +470,220 @@ export function ResumeEditorModal({ isOpen, resumeId, personaName, onClose }: Re
             )}
           </main>
 
-          <aside className="overflow-y-auto border-l p-4 print:hidden">
-            <h3 className="mb-2 text-sm font-semibold">Editor</h3>
+          {/* ── Editor / AI panel ── */}
+          <aside
+            className={`overflow-y-auto p-4 print:hidden ${
+              mobileTab === "edit" || mobileTab === "ai" ? "min-h-0 flex-1" : "hidden"
+            } lg:block lg:border-l`}
+          >
+            {/* ── Edit section ── */}
+            <div className={`${mobileTab === "edit" ? "" : "hidden"} lg:block`}>
+              {/* Mobile section pills (horizontal scroll) */}
+              <div className="mb-3 lg:hidden">
+                <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-2">
+                  {effectiveSections.map((s, i) => (
+                    <button
+                      key={`mob-${s.type}-${i}`}
+                      onClick={() => setSelectedIndex(i)}
+                      className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                        i === selectedIndex
+                          ? "bg-blue-600 text-white"
+                          : "bg-secondary text-secondary-foreground hover:bg-accent"
+                      }`}
+                    >
+                      <span className="capitalize">{s.type}</span>
+                    </button>
+                  ))}
+                </div>
 
-            {editMode === "guided" ? (
-              <div className="space-y-4">
-                {selectedSection ? (
-                  <>
-                    <div className="rounded-lg border bg-muted/30 p-2 text-xs text-muted-foreground">
-                      Editing section: <strong className="capitalize">{selectedSection.type}</strong>
-                    </div>
-
-                    {selectedSection.type === "header" && (
-                      <HeaderEditor
-                        section={selectedSection as HeaderSection}
-                        onChange={(next) => updateSection(selectedIndex, next)}
-                      />
-                    )}
-
-                    {selectedSection.type === "summary" && (
-                      <SummaryEditor
-                        section={selectedSection as SummarySection}
-                        onChange={(next) => updateSection(selectedIndex, next)}
-                      />
-                    )}
-
-                    {selectedSection.type === "experience" && (
-                      <ExperienceEditor
-                        section={selectedSection as ExperienceSection}
-                        onChange={(next) => updateSection(selectedIndex, next)}
-                      />
-                    )}
-
-                    {selectedSection.type === "education" && (
-                      <EducationEditor
-                        section={selectedSection as EducationSection}
-                        onChange={(next) => updateSection(selectedIndex, next)}
-                      />
-                    )}
-
-                    {selectedSection.type === "skills" && (
-                      <SkillsEditor
-                        section={selectedSection as SkillsSection}
-                        onChange={(next) => updateSection(selectedIndex, next)}
-                      />
-                    )}
-
-                    {selectedSection.type === "projects" && (
-                      <ProjectsEditor
-                        section={selectedSection as ProjectsSection}
-                        onChange={(next) => updateSection(selectedIndex, next)}
-                      />
-                    )}
-
-                    {selectedSection.type === "certifications" && (
-                      <CertsEditor
-                        section={selectedSection as CertsSection}
-                        onChange={(next) => updateSection(selectedIndex, next)}
-                      />
-                    )}
-                  </>
-                ) : (
-                  <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                    Select a section from the left.
-                  </div>
-                )}
-
-                <div className="mt-4 border-t pt-4">
-                  <h4 className="mb-2 text-sm font-semibold">AI Assist</h4>
-                  <textarea
-                    value={instruction}
-                    onChange={(e) => setInstruction(e.target.value)}
-                    className="h-20 w-full rounded-lg border bg-background p-2 text-sm"
-                    placeholder="Instruction for AI..."
-                  />
-                  <textarea
-                    value={jobDescription}
-                    onChange={(e) => setJobDescription(e.target.value)}
-                    className="mt-2 h-24 w-full rounded-lg border bg-background p-2 text-sm"
-                    placeholder="Optional job description for tailoring..."
-                  />
+                {/* Mobile edit-mode toggle */}
+                <div className="flex gap-1 rounded-lg border p-1">
                   <button
-                    onClick={() => aiMutation.mutate()}
-                    disabled={aiMutation.isPending || !selectedSection}
-                    className="mt-2 w-full rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+                    onClick={() => setEditMode("guided")}
+                    className={`flex-1 rounded-md px-2 py-1 text-xs ${
+                      editMode === "guided" ? "bg-blue-600 text-white" : "hover:bg-accent"
+                    }`}
                   >
-                    {aiMutation.isPending ? "AI rewriting..." : "Improve with AI"}
+                    Guided
                   </button>
-                  {aiMutation.isError && (
-                    <p className="mt-1 text-xs text-destructive">
-                      AI edit failed. Check API key or try a shorter prompt.
-                    </p>
-                  )}
+                  <button
+                    onClick={() => {
+                      setRawJson(JSON.stringify(effectiveSections, null, 2));
+                      setEditMode("json");
+                    }}
+                    className={`flex-1 rounded-md px-2 py-1 text-xs ${
+                      editMode === "json" ? "bg-blue-600 text-white" : "hover:bg-accent"
+                    }`}
+                  >
+                    JSON
+                  </button>
                 </div>
               </div>
-            ) : (
-              <div className="space-y-2">
-                <textarea
-                  value={rawJson}
-                  onChange={(e) => setRawJson(e.target.value)}
-                  className="h-[60vh] w-full rounded-lg border bg-background p-2 font-mono text-xs"
-                />
-                <button
-                  onClick={() => {
-                    try {
-                      const parsed = JSON.parse(rawJson) as ResumeSection[];
-                      commitSections(parsed);
-                    } catch {
-                      // noop
-                    }
-                  }}
-                  className="w-full rounded-lg border px-3 py-2 text-sm hover:bg-accent"
-                >
-                  Apply JSON
-                </button>
-              </div>
-            )}
+
+              <h3 className="mb-2 text-sm font-semibold">Editor</h3>
+
+              {editMode === "guided" ? (
+                <div className="space-y-4">
+                  {selectedSection ? (
+                    <>
+                      <div className="rounded-lg border bg-muted/30 p-2 text-xs text-muted-foreground">
+                        Editing section: <strong className="capitalize">{selectedSection.type}</strong>
+                      </div>
+
+                      {selectedSection.type === "header" && (
+                        <HeaderEditor
+                          section={selectedSection as HeaderSection}
+                          onChange={(next) => updateSection(selectedIndex, next)}
+                        />
+                      )}
+
+                      {selectedSection.type === "summary" && (
+                        <SummaryEditor
+                          section={selectedSection as SummarySection}
+                          onChange={(next) => updateSection(selectedIndex, next)}
+                        />
+                      )}
+
+                      {selectedSection.type === "experience" && (
+                        <ExperienceEditor
+                          section={selectedSection as ExperienceSection}
+                          onChange={(next) => updateSection(selectedIndex, next)}
+                        />
+                      )}
+
+                      {selectedSection.type === "education" && (
+                        <EducationEditor
+                          section={selectedSection as EducationSection}
+                          onChange={(next) => updateSection(selectedIndex, next)}
+                        />
+                      )}
+
+                      {selectedSection.type === "skills" && (
+                        <SkillsEditor
+                          section={selectedSection as SkillsSection}
+                          onChange={(next) => updateSection(selectedIndex, next)}
+                        />
+                      )}
+
+                      {selectedSection.type === "projects" && (
+                        <ProjectsEditor
+                          section={selectedSection as ProjectsSection}
+                          onChange={(next) => updateSection(selectedIndex, next)}
+                        />
+                      )}
+
+                      {selectedSection.type === "certifications" && (
+                        <CertsEditor
+                          section={selectedSection as CertsSection}
+                          onChange={(next) => updateSection(selectedIndex, next)}
+                        />
+                      )}
+                    </>
+                  ) : (
+                    <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                      Select a section to begin editing.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <textarea
+                    value={rawJson}
+                    onChange={(e) => setRawJson(e.target.value)}
+                    className="h-[60vh] w-full rounded-lg border bg-background p-2 font-mono text-xs"
+                  />
+                  <button
+                    onClick={() => {
+                      try {
+                        const parsed = JSON.parse(rawJson) as ResumeSection[];
+                        commitSections(parsed);
+                      } catch {
+                        // noop
+                      }
+                    }}
+                    className="w-full rounded-lg border px-3 py-2 text-sm hover:bg-accent"
+                  >
+                    Apply JSON
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* ── AI Assist section ── */}
+            <div
+              className={`${mobileTab === "ai" ? "" : "hidden"} lg:block lg:mt-4 lg:border-t lg:pt-4`}
+            >
+              <h4 className="mb-2 text-sm font-semibold">AI Assist</h4>
+              <textarea
+                value={instruction}
+                onChange={(e) => setInstruction(e.target.value)}
+                className="h-20 w-full rounded-lg border bg-background p-2 text-sm"
+                placeholder="Instruction for AI..."
+              />
+              <textarea
+                value={jobDescription}
+                onChange={(e) => setJobDescription(e.target.value)}
+                className="mt-2 h-24 w-full rounded-lg border bg-background p-2 text-sm"
+                placeholder="Optional job description for tailoring..."
+              />
+              <button
+                onClick={() => aiMutation.mutate()}
+                disabled={aiMutation.isPending || !selectedSection}
+                className="mt-2 w-full rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+              >
+                {aiMutation.isPending ? "AI rewriting..." : "Improve with AI"}
+              </button>
+              {aiMutation.isError && (
+                <p className="mt-1 text-xs text-destructive">
+                  AI edit failed. Check API key or try a shorter prompt.
+                </p>
+              )}
+            </div>
           </aside>
+        </div>
+
+        {/* ── Mobile bottom tab bar ── */}
+        <div className="flex border-t bg-background lg:hidden print:hidden">
+          <button
+            onClick={() => setMobileTab("preview")}
+            className={`flex flex-1 flex-col items-center gap-0.5 py-2.5 text-xs font-medium transition-colors ${
+              mobileTab === "preview"
+                ? "text-blue-600 dark:text-blue-400"
+                : "text-muted-foreground"
+            }`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+              <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h6.879a1.5 1.5 0 0 1 1.06.44l4.122 4.12A1.5 1.5 0 0 1 17 7.622V16.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16.5v-13Z" />
+            </svg>
+            Preview
+          </button>
+          <button
+            onClick={() => setMobileTab("edit")}
+            className={`flex flex-1 flex-col items-center gap-0.5 py-2.5 text-xs font-medium transition-colors ${
+              mobileTab === "edit"
+                ? "text-blue-600 dark:text-blue-400"
+                : "text-muted-foreground"
+            }`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+              <path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 0 1-.65-.65Z" />
+              <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0 0 10 3H4.75A2.75 2.75 0 0 0 2 5.75v9.5A2.75 2.75 0 0 0 4.75 18h9.5A2.75 2.75 0 0 0 17 15.25V10a.75.75 0 0 0-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5Z" />
+            </svg>
+            Edit
+          </button>
+          <button
+            onClick={() => setMobileTab("ai")}
+            className={`flex flex-1 flex-col items-center gap-0.5 py-2.5 text-xs font-medium transition-colors ${
+              mobileTab === "ai"
+                ? "text-violet-600 dark:text-violet-400"
+                : "text-muted-foreground"
+            }`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+              <path d="M15.98 1.804a1 1 0 0 0-1.96 0l-.24 1.192a1 1 0 0 1-.784.785l-1.192.238a1 1 0 0 0 0 1.962l1.192.238a1 1 0 0 1 .785.785l.238 1.192a1 1 0 0 0 1.962 0l.238-1.192a1 1 0 0 1 .785-.785l1.192-.238a1 1 0 0 0 0-1.962l-1.192-.238a1 1 0 0 1-.785-.785l-.238-1.192ZM6.949 5.684a1 1 0 0 0-1.898 0l-.683 2.051a1 1 0 0 1-.633.633l-2.051.683a1 1 0 0 0 0 1.898l2.051.684a1 1 0 0 1 .633.632l.683 2.051a1 1 0 0 0 1.898 0l.683-2.051a1 1 0 0 1 .633-.633l2.051-.683a1 1 0 0 0 0-1.898l-2.051-.683a1 1 0 0 1-.633-.633L6.95 5.684ZM13.949 13.684a1 1 0 0 0-1.898 0l-.184.551a1 1 0 0 1-.632.633l-.551.183a1 1 0 0 0 0 1.898l.551.183a1 1 0 0 1 .633.633l.183.551a1 1 0 0 0 1.898 0l.184-.551a1 1 0 0 1 .632-.633l.551-.183a1 1 0 0 0 0-1.898l-.551-.184a1 1 0 0 1-.633-.632l-.183-.551Z" />
+            </svg>
+            AI
+          </button>
         </div>
       </div>
     </div>
