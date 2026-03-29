@@ -27,6 +27,7 @@ from app.schemas.schemas import (
     AutomationPipelineSettingsUpdate,
     AutomationReadinessResponse,
 )
+from app.services.job_matching import run_matching_for_user
 
 router = APIRouter(prefix="/automation", tags=["automation"])
 
@@ -187,6 +188,15 @@ async def run_pipeline_now(
     db.add(run)
     await db.flush()
 
+    # ── Step 1: Run job matching to score any unmatched postings ──
+    new_matches = await run_matching_for_user(
+        current_user.id,
+        db,
+        limit=settings.max_jobs_per_run * 2,  # evaluate more than we'll keep
+    )
+    newly_matched_count = len(new_matches)
+
+    # ── Step 2: Retrieve all matches above threshold ──
     match_query = (
         select(JobMatch)
         .where(
@@ -332,6 +342,7 @@ async def run_pipeline_now(
     run.finished_at = datetime.now(timezone.utc)
     run.summary = {
         "dry_run": payload.dry_run,
+        "newly_matched_jobs": newly_matched_count,
         "settings_enabled": settings.enabled,
         "auto_apply_enabled": settings.auto_apply_enabled,
         "require_human_review": settings.require_human_review,
