@@ -11,23 +11,12 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   automationApi,
   type AutomationRun,
-  type AutomationPipelineSettingsPayload,
+  type AutomationPipelineSettings,
 } from "@/lib/automation-api";
 
-const emptySettings: AutomationPipelineSettingsPayload = {
-  enabled: false,
-  auto_apply_enabled: false,
-  require_human_review: true,
-  auto_tailor_resume: true,
-  auto_generate_cover_letter: false,
-  allowed_sources: [],
-  search_terms: [],
-  target_locations: [],
-  excluded_keywords: [],
-  min_match_score: 70,
-  max_jobs_per_run: 25,
-  max_applications_per_day: 5,
-};
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                            */
+/* ------------------------------------------------------------------ */
 
 function toMultiline(value: string[]): string {
   return value.join("\n");
@@ -40,6 +29,21 @@ function fromMultiline(value: string): string[] {
     .filter(Boolean);
 }
 
+function fmtDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString();
+}
+
+function fmtDuration(ms: number | null | undefined): string {
+  if (!ms) return "—";
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Tiny UI pieces                                                     */
+/* ------------------------------------------------------------------ */
+
 function ReadinessBadge({ ready, label }: { ready: boolean; label: string }) {
   return (
     <span
@@ -50,630 +54,1525 @@ function ReadinessBadge({ ready, label }: { ready: boolean; label: string }) {
           : "border-border bg-muted text-muted-foreground",
       ].join(" ")}
     >
-      {label}: {ready ? "Ready" : "Needs setup"}
+      {ready ? "✓" : "○"} {label}
     </span>
   );
 }
 
-function toStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === "string");
+function StatCard({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string | number;
+  sub?: string;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 text-2xl font-semibold">{value}</p>
+      {sub ? <p className="text-xs text-muted-foreground">{sub}</p> : null}
+    </div>
+  );
 }
 
-function toSkippedArray(value: unknown): Array<{ job_posting_id: string; reason: string }> {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      if (typeof item !== "object" || item === null) {
-        return null;
-      }
-      const record = item as Record<string, unknown>;
-      const jobPostingId =
-        typeof record.job_posting_id === "string" ? record.job_posting_id : "unknown";
-      const reason = typeof record.reason === "string" ? record.reason : "unspecified";
-      return { job_posting_id: jobPostingId, reason };
-    })
-    .filter((item): item is { job_posting_id: string; reason: string } => item !== null);
+function Toggle({
+  checked,
+  onChange,
+  label,
+  description,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  description?: string;
+}) {
+  return (
+    <label className="flex cursor-pointer items-start gap-3">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5 h-4 w-4 rounded border-border accent-primary"
+      />
+      <div>
+        <span className="text-sm font-medium">{label}</span>
+        {description ? (
+          <p className="text-xs text-muted-foreground">{description}</p>
+        ) : null}
+      </div>
+    </label>
+  );
 }
+
+function TierBadge({ tier }: { tier: string }) {
+  const colors: Record<string, string> = {
+    auto_apply: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+    review: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
+    save: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+  };
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-xs font-medium ${colors[tier] ?? "bg-muted text-muted-foreground"}`}
+    >
+      {tier.replace("_", " ")}
+    </span>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Tabs                                                               */
+/* ------------------------------------------------------------------ */
+
+type TabId = "settings" | "runs" | "queue" | "analytics" | "notifications";
+
+function TabBar({
+  active,
+  onChange,
+  queueCount,
+  unreadCount,
+}: {
+  active: TabId;
+  onChange: (t: TabId) => void;
+  queueCount: number;
+  unreadCount: number;
+}) {
+  const tabs: { id: TabId; label: string; badge?: number }[] = [
+    { id: "settings", label: "Settings" },
+    { id: "runs", label: "Run History" },
+    { id: "queue", label: "Approval Queue", badge: queueCount },
+    { id: "analytics", label: "Analytics" },
+    { id: "notifications", label: "Notifications", badge: unreadCount },
+  ];
+
+  return (
+    <div className="flex gap-1 border-b border-border">
+      {tabs.map((t) => (
+        <button
+          key={t.id}
+          onClick={() => onChange(t.id)}
+          className={[
+            "relative px-4 py-2 text-sm font-medium transition-colors",
+            active === t.id
+              ? "border-b-2 border-primary text-primary"
+              : "text-muted-foreground hover:text-foreground",
+          ].join(" ")}
+        >
+          {t.label}
+          {t.badge ? (
+            <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/15 px-1.5 text-xs font-medium text-primary">
+              {t.badge}
+            </span>
+          ) : null}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  Main page                                                          */
+/* ================================================================== */
 
 export default function AutomationPage() {
-  const queryClient = useQueryClient();
-  const [form, setForm] = useState<AutomationPipelineSettingsPayload>(emptySettings);
-  const [dryRunMode, setDryRunMode] = useState(true);
-  const [message, setMessage] = useState<string | null>(null);
-  const [runMessage, setRunMessage] = useState<string | null>(null);
-  const [selectedRun, setSelectedRun] = useState<AutomationRun | null>(null);
+  const qc = useQueryClient();
+  const [tab, setTab] = useState<TabId>("settings");
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [dryRun, setDryRun] = useState(true);
 
-  const settingsQuery = useQuery({
-    queryKey: ["automation-settings"],
+  /* --- data -------------------------------------------------------- */
+  const settingsQ = useQuery({
+    queryKey: ["automation", "settings"],
     queryFn: automationApi.getSettings,
   });
-
-  const readinessQuery = useQuery({
-    queryKey: ["automation-readiness"],
+  const readinessQ = useQuery({
+    queryKey: ["automation", "readiness"],
     queryFn: automationApi.getReadiness,
   });
-
-  const runsQuery = useQuery({
-    queryKey: ["automation-runs"],
-    queryFn: () => automationApi.listRuns(10),
+  const runsQ = useQuery({
+    queryKey: ["automation", "runs"],
+    queryFn: () => automationApi.listRuns(50),
   });
+  const queueQ = useQuery({
+    queryKey: ["automation", "queue"],
+    queryFn: () => automationApi.getApprovalQueue("pending"),
+    enabled: tab === "queue" || tab === "settings",
+  });
+  const analyticsQ = useQuery({
+    queryKey: ["automation", "analytics"],
+    queryFn: () => automationApi.getAnalytics(30),
+    enabled: tab === "analytics",
+  });
+  const notificationsQ = useQuery({
+    queryKey: ["automation", "notifications"],
+    queryFn: () => automationApi.getNotifications(50),
+    enabled: tab === "notifications",
+  });
+  const scheduleQ = useQuery({
+    queryKey: ["automation", "schedule"],
+    queryFn: automationApi.getSchedule,
+    enabled: tab === "settings",
+  });
+
+  /* --- local form state ------------------------------------------- */
+  const [form, setForm] = useState<Record<string, unknown>>({});
 
   useEffect(() => {
-    if (!settingsQuery.data) return;
-    setForm({
-      enabled: settingsQuery.data.enabled,
-      auto_apply_enabled: settingsQuery.data.auto_apply_enabled,
-      require_human_review: settingsQuery.data.require_human_review,
-      auto_tailor_resume: settingsQuery.data.auto_tailor_resume,
-      auto_generate_cover_letter: settingsQuery.data.auto_generate_cover_letter,
-      allowed_sources: settingsQuery.data.allowed_sources,
-      search_terms: settingsQuery.data.search_terms,
-      target_locations: settingsQuery.data.target_locations,
-      excluded_keywords: settingsQuery.data.excluded_keywords,
-      min_match_score: settingsQuery.data.min_match_score,
-      max_jobs_per_run: settingsQuery.data.max_jobs_per_run,
-      max_applications_per_day: settingsQuery.data.max_applications_per_day,
-    });
-  }, [settingsQuery.data]);
-
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      setMessage(null);
-      return automationApi.saveSettings(form);
-    },
-    onSuccess: () => {
-      setMessage("Automation settings saved.");
-      void queryClient.invalidateQueries({ queryKey: ["automation-settings"] });
-      void queryClient.invalidateQueries({ queryKey: ["automation-readiness"] });
-    },
-    onError: (error: { response?: { data?: { detail?: string } } }) => {
-      setMessage(error.response?.data?.detail ?? "Failed to save automation settings.");
-    },
-  });
-
-  const runNowMutation = useMutation({
-    mutationFn: async () => {
-      setRunMessage(null);
-      return automationApi.runNow({ dry_run: dryRunMode });
-    },
-    onSuccess: (run) => {
-      setRunMessage(
-        `Run completed: ${run.matched_jobs_count} matched, ${run.applied_jobs_count} applied, ${run.skipped_jobs_count} skipped.`
-      );
-      void queryClient.invalidateQueries({ queryKey: ["automation-runs"] });
-      void queryClient.invalidateQueries({ queryKey: ["automation-readiness"] });
-    },
-    onError: (error: { response?: { data?: { detail?: string } } }) => {
-      setRunMessage(error.response?.data?.detail ?? "Failed to execute automation run.");
-    },
-  });
-
-  const readinessCards = useMemo(() => {
-    if (!readinessQuery.data) {
-      return [] as Array<{ label: string; value: string }>;
+    if (settingsQ.data) {
+      setForm({ ...settingsQ.data });
     }
+  }, [settingsQ.data]);
 
-    return [
-      { label: "Resumes", value: String(readinessQuery.data.resume_count) },
-      { label: "Stored jobs", value: String(readinessQuery.data.saved_job_count) },
-      { label: "Matches", value: String(readinessQuery.data.job_match_count) },
-      { label: "Applications", value: String(readinessQuery.data.application_count) },
-    ];
-  }, [readinessQuery.data]);
+  const setField = <T,>(key: string, value: T) =>
+    setForm((prev) => ({ ...prev, [key]: value }));
 
-  const runSummary = selectedRun?.summary ?? {};
-  const createdApplicationIds = toStringArray(
-    (runSummary as Record<string, unknown>).created_application_ids,
+  /* --- mutations --------------------------------------------------- */
+  const saveMut = useMutation({
+    mutationFn: automationApi.saveSettings,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["automation"] }),
+  });
+
+  const runMut = useMutation({
+    mutationFn: automationApi.runNow,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["automation"] }),
+  });
+
+  const decideMut = useMutation({
+    mutationFn: ({
+      itemId,
+      action,
+    }: {
+      itemId: string;
+      action: "approved" | "rejected" | "deferred";
+    }) => automationApi.decideApproval(itemId, { action }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["automation"] }),
+  });
+
+  const batchDecideMut = useMutation({
+    mutationFn: automationApi.batchDecide,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["automation"] }),
+  });
+
+  const cancelRunMut = useMutation({
+    mutationFn: automationApi.cancelRun,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["automation"] }),
+  });
+
+  const retryRunMut = useMutation({
+    mutationFn: automationApi.retryRun,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["automation"] }),
+  });
+
+  const markReadMut = useMutation({
+    mutationFn: automationApi.markNotificationRead,
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["automation", "notifications"] }),
+  });
+
+  const markAllReadMut = useMutation({
+    mutationFn: automationApi.markAllNotificationsRead,
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["automation", "notifications"] }),
+  });
+
+  /* --- derived ----------------------------------------------------- */
+  const readiness = readinessQ.data;
+  const runs = runsQ.data?.items ?? [];
+  const selectedRun = useMemo(
+    () => runs.find((r) => r.id === selectedRunId) ?? null,
+    [runs, selectedRunId]
   );
-  const skippedItems = toSkippedArray((runSummary as Record<string, unknown>).skipped);
+  const queueItems = queueQ.data?.items ?? [];
+  const analytics = analyticsQ.data;
+  const notifications = notificationsQ.data;
+  const schedule = scheduleQ.data;
+
+  const queueCount = queueQ.data?.total ?? 0;
+  const unreadCount = notificationsQ.data?.unread_count ?? 0;
+
+  /* ================================================================ */
+  /*  RENDER                                                           */
+  /* ================================================================ */
 
   return (
     <AppShell>
-      <div className="space-y-8">
-        <div>
-          <h1 className="text-3xl font-bold">Automation</h1>
-          <p className="mt-2 max-w-3xl text-muted-foreground">
-            Configure the first stage of the automation pipeline: job discovery scope,
-            matching thresholds, and application guardrails.
-          </p>
+      <div className="mx-auto max-w-6xl space-y-6 p-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">Automation Pipeline</h1>
+            <p className="text-sm text-muted-foreground">
+              Configure, schedule, and monitor your job-matching pipeline.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={dryRun}
+                onChange={(e) => setDryRun(e.target.checked)}
+                className="h-4 w-4 rounded border-border accent-primary"
+              />
+              Dry run
+            </label>
+            <Button
+              onClick={() => runMut.mutate({ dry_run: dryRun })}
+              disabled={runMut.isPending}
+            >
+              {runMut.isPending ? "Running…" : "Run Pipeline"}
+            </Button>
+          </div>
         </div>
 
-        <section className="rounded-lg border bg-card p-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <h2 className="text-xl font-semibold">Readiness</h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                This checks whether your workspace has the minimum data required to run
-                matching and auto-apply safely.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
+        {/* Readiness */}
+        {readiness ? (
+          <div className="rounded-lg border border-border bg-card p-4 space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <ReadinessBadge ready={readiness.has_profile} label="Profile" />
               <ReadinessBadge
-                ready={Boolean(readinessQuery.data?.ready_for_matching)}
-                label="Matching"
+                ready={readiness.has_preferences}
+                label="Preferences"
               />
               <ReadinessBadge
-                ready={Boolean(readinessQuery.data?.ready_for_auto_apply)}
-                label="Auto-apply"
+                ready={readiness.resume_count > 0}
+                label="Resume"
+              />
+              <ReadinessBadge
+                ready={readiness.ready_for_matching}
+                label="Matching Ready"
+              />
+              <ReadinessBadge
+                ready={readiness.ready_for_auto_apply}
+                label="Auto-Apply Ready"
               />
             </div>
-          </div>
 
-          {readinessQuery.isLoading && (
-            <div className="mt-6 rounded-md border p-4 text-sm text-muted-foreground">
-              Loading readiness status...
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+              <StatCard
+                label="Profile completeness"
+                value={`${readiness.profile_completeness.toFixed(0)}%`}
+              />
+              <StatCard
+                label="Skill coverage"
+                value={`${readiness.skill_coverage.toFixed(0)}%`}
+              />
+              <StatCard label="Resumes" value={readiness.resume_count} />
+              <StatCard label="Job postings" value={readiness.saved_job_count} />
+              <StatCard label="Applications" value={readiness.application_count} />
+              <StatCard label="Matches" value={readiness.job_match_count} />
             </div>
-          )}
 
-          {readinessQuery.data && (
-            <div className="mt-6 space-y-6">
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                {readinessCards.map((card) => (
-                  <div key={card.label} className="rounded-md border p-4">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                      {card.label}
-                    </p>
-                    <p className="mt-2 text-2xl font-semibold">{card.value}</p>
-                  </div>
+            {readiness.blockers.length > 0 ? (
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-destructive">
+                  Blockers
+                </p>
+                {readiness.blockers.map((b, i) => (
+                  <p key={i} className="text-xs text-destructive">
+                    • {b}
+                  </p>
                 ))}
               </div>
-
-              <div className="grid gap-4 lg:grid-cols-2">
-                <div className="rounded-md border p-4">
-                  <h3 className="font-medium">Requirements</h3>
-                  <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-                    <li>Profile: {readinessQuery.data.has_profile ? "Complete" : "Missing"}</li>
-                    <li>
-                      Preferences: {readinessQuery.data.has_preferences ? "Complete" : "Missing"}
-                    </li>
-                    <li>
-                      Resume baseline: {readinessQuery.data.resume_count > 0 ? "Complete" : "Missing"}
-                    </li>
-                  </ul>
-                </div>
-
-                <div className="rounded-md border p-4">
-                  <h3 className="font-medium">Pipeline blockers</h3>
-                  {readinessQuery.data.blockers.length > 0 ? (
-                    <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-muted-foreground">
-                      {readinessQuery.data.blockers.map((blocker) => (
-                        <li key={blocker}>{blocker}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-3 text-sm text-muted-foreground">
-                      No hard blockers detected for the current configuration.
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {readinessQuery.data.suggestions.length > 0 && (
-                <div className="rounded-md border bg-muted/50 p-4">
-                  <h3 className="font-medium">Suggested next steps</h3>
-                  <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-muted-foreground">
-                    {readinessQuery.data.suggestions.map((suggestion) => (
-                      <li key={suggestion}>{suggestion}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
-        </section>
-
-        <div className="grid gap-8 xl:grid-cols-[2fr_1fr]">
-          <div className="space-y-8">
-            <section className="rounded-lg border bg-card p-6">
-              <div className="mb-6">
-                <h2 className="text-xl font-semibold">Pipeline mode</h2>
-                <p className="text-sm text-muted-foreground">
-                  Control whether HireFlow only discovers and ranks jobs or can also move into
-                  approval and application execution.
+            ) : null}
+            {readiness.suggestions.length > 0 ? (
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-muted-foreground">
+                  Suggestions
                 </p>
-              </div>
-
-              <div className="space-y-4">
-                {[
-                  {
-                    key: "enabled",
-                    label: "Enable automation pipeline",
-                    description: "Turns on automated discovery and matching for this user.",
-                  },
-                  {
-                    key: "auto_apply_enabled",
-                    label: "Enable auto-apply",
-                    description: "Allows the pipeline to progress beyond scoring into application submission.",
-                  },
-                  {
-                    key: "require_human_review",
-                    label: "Require human review before apply",
-                    description: "Keeps an approval gate even when auto-apply is turned on.",
-                  },
-                  {
-                    key: "auto_tailor_resume",
-                    label: "Tailor resume automatically",
-                    description: "Uses the matching pipeline to prepare targeted resume variants.",
-                  },
-                  {
-                    key: "auto_generate_cover_letter",
-                    label: "Generate cover letters automatically",
-                    description: "Creates cover letters when the pipeline decides one is needed.",
-                  },
-                ].map((item) => {
-                  const checked = form[item.key as keyof AutomationPipelineSettingsPayload];
-                  return (
-                    <label
-                      key={item.key}
-                      className="flex items-start gap-3 rounded-md border p-4"
-                    >
-                      <input
-                        type="checkbox"
-                        className="mt-1 h-4 w-4"
-                        checked={typeof checked === "boolean" ? checked : false}
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            [item.key]: event.target.checked,
-                          }))
-                        }
-                      />
-                      <span>
-                        <span className="block text-sm font-medium">{item.label}</span>
-                        <span className="mt-1 block text-sm text-muted-foreground">
-                          {item.description}
-                        </span>
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-            </section>
-
-            <section className="rounded-lg border bg-card p-6">
-              <div className="mb-6">
-                <h2 className="text-xl font-semibold">Discovery rules</h2>
-                <p className="text-sm text-muted-foreground">
-                  Set the job search footprint the pipeline should use when scanning new roles.
-                </p>
-              </div>
-
-              <div className="grid gap-6 md:grid-cols-2">
-                <div className="md:col-span-2">
-                  <Label htmlFor="search_terms">Search terms</Label>
-                  <Textarea
-                    id="search_terms"
-                    value={toMultiline(form.search_terms)}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        search_terms: fromMultiline(event.target.value),
-                      }))
-                    }
-                    placeholder="Senior frontend engineer&#10;Full stack developer&#10;React TypeScript"
-                  />
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    One per line or comma-separated.
+                {readiness.suggestions.map((s, i) => (
+                  <p key={i} className="text-xs text-muted-foreground">
+                    • {s}
                   </p>
-                </div>
+                ))}
+              </div>
+            ) : null}
+            {readiness.data_quality_warnings.length > 0 ? (
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-yellow-600 dark:text-yellow-400">
+                  Data Quality
+                </p>
+                {readiness.data_quality_warnings.map((w, i) => (
+                  <p
+                    key={i}
+                    className="text-xs text-yellow-600 dark:text-yellow-400"
+                  >
+                    ⚠ {w}
+                  </p>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
-                <div>
-                  <Label htmlFor="target_locations">Target locations</Label>
-                  <Textarea
-                    id="target_locations"
-                    value={toMultiline(form.target_locations)}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        target_locations: fromMultiline(event.target.value),
-                      }))
-                    }
-                    placeholder="Remote&#10;London&#10;Berlin"
-                  />
-                </div>
+        {/* Tabs */}
+        <TabBar
+          active={tab}
+          onChange={setTab}
+          queueCount={queueCount}
+          unreadCount={unreadCount}
+        />
 
-                <div>
-                  <Label htmlFor="allowed_sources">Allowed sources</Label>
-                  <Textarea
-                    id="allowed_sources"
-                    value={toMultiline(form.allowed_sources)}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        allowed_sources: fromMultiline(event.target.value),
-                      }))
-                    }
-                    placeholder="linkedin&#10;indeed&#10;greenhouse"
-                  />
-                </div>
-
-                <div className="md:col-span-2">
-                  <Label htmlFor="excluded_keywords">Excluded keywords</Label>
-                  <Textarea
-                    id="excluded_keywords"
-                    value={toMultiline(form.excluded_keywords)}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        excluded_keywords: fromMultiline(event.target.value),
-                      }))
-                    }
-                    placeholder="senior manager&#10;clearance required&#10;commission only"
-                  />
-                </div>
+        {/* ==================== SETTINGS TAB ==================== */}
+        {tab === "settings" ? (
+          <div className="space-y-8">
+            {/* Core toggles */}
+            <section className="space-y-3">
+              <h2 className="text-lg font-semibold">Pipeline Controls</h2>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Toggle
+                  checked={!!form["enabled"]}
+                  onChange={(v) => setField("enabled", v)}
+                  label="Pipeline enabled"
+                  description="Turn the automation pipeline on or off"
+                />
+                <Toggle
+                  checked={!!form["auto_apply_enabled"]}
+                  onChange={(v) => setField("auto_apply_enabled", v)}
+                  label="Auto-apply enabled"
+                  description="Automatically apply to high-confidence matches"
+                />
+                <Toggle
+                  checked={!!form["require_human_review"]}
+                  onChange={(v) => setField("require_human_review", v)}
+                  label="Require human review"
+                  description="Send matches to approval queue before applying"
+                />
+                <Toggle
+                  checked={!!form["auto_tailor_resume"]}
+                  onChange={(v) => setField("auto_tailor_resume", v)}
+                  label="Auto-tailor resume"
+                />
+                <Toggle
+                  checked={!!form["auto_generate_cover_letter"]}
+                  onChange={(v) => setField("auto_generate_cover_letter", v)}
+                  label="Auto-generate cover letter"
+                />
               </div>
             </section>
 
-            <section className="rounded-lg border bg-card p-6">
-              <div className="mb-6">
-                <h2 className="text-xl font-semibold">Match and safety thresholds</h2>
-                <p className="text-sm text-muted-foreground">
-                  Keep the pipeline selective so it only prioritizes jobs worth spending time on.
-                </p>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-3">
+            {/* Confidence tiers */}
+            <section className="space-y-3">
+              <h2 className="text-lg font-semibold">Confidence Tiers</h2>
+              <p className="text-xs text-muted-foreground">
+                Jobs are sorted into tiers based on their match score. Auto-apply
+                tier gets applied instantly (if enabled), review tier goes to
+                approval queue, save tier is just recorded.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-3">
                 <div>
-                  <Label htmlFor="min_match_score">Minimum match score</Label>
+                  <Label>Auto-apply ≥</Label>
                   <Input
-                    id="min_match_score"
                     type="number"
                     min={0}
                     max={100}
-                    value={form.min_match_score}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        min_match_score: Number(event.target.value) || 0,
-                      }))
+                    value={(form["confidence_auto_apply_threshold"] as number) ?? 90}
+                    onChange={(e) =>
+                      setField(
+                        "confidence_auto_apply_threshold",
+                        Number(e.target.value)
+                      )
                     }
                   />
                 </div>
-
                 <div>
-                  <Label htmlFor="max_jobs_per_run">Max jobs per run</Label>
+                  <Label>Review ≥</Label>
                   <Input
-                    id="max_jobs_per_run"
                     type="number"
-                    min={1}
-                    value={form.max_jobs_per_run}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        max_jobs_per_run: Number(event.target.value) || 1,
-                      }))
+                    min={0}
+                    max={100}
+                    value={(form["confidence_review_threshold"] as number) ?? 75}
+                    onChange={(e) =>
+                      setField(
+                        "confidence_review_threshold",
+                        Number(e.target.value)
+                      )
                     }
                   />
                 </div>
-
                 <div>
-                  <Label htmlFor="max_applications_per_day">Daily application limit</Label>
+                  <Label>Save ≥</Label>
                   <Input
-                    id="max_applications_per_day"
                     type="number"
-                    min={1}
-                    value={form.max_applications_per_day}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        max_applications_per_day: Number(event.target.value) || 1,
-                      }))
+                    min={0}
+                    max={100}
+                    value={(form["confidence_save_threshold"] as number) ?? 65}
+                    onChange={(e) =>
+                      setField(
+                        "confidence_save_threshold",
+                        Number(e.target.value)
+                      )
                     }
                   />
                 </div>
               </div>
             </section>
-          </div>
 
-          <div className="space-y-8">
-            <section className="rounded-lg border bg-card p-6">
-              <h2 className="text-xl font-semibold">What this enables</h2>
-              <div className="mt-4 space-y-3 text-sm text-muted-foreground">
-                <p>
-                  This release stores the user-level policy layer for automation. It is the base
-                  for scheduled discovery, scoring, approval queues, and later auto-apply runs.
-                </p>
-                <p>
-                  Current pipeline signals already reuse profile data, preferences, resume
-                  inventory, and job matches already present in HireFlow.
-                </p>
+            {/* Discovery rules */}
+            <section className="space-y-3">
+              <h2 className="text-lg font-semibold">Discovery Rules</h2>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <Label>Search terms (one per line)</Label>
+                  <Textarea
+                    rows={3}
+                    value={toMultiline(
+                      (form["search_terms"] as string[]) ?? []
+                    )}
+                    onChange={(e) =>
+                      setField("search_terms", fromMultiline(e.target.value))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label>Target locations (one per line)</Label>
+                  <Textarea
+                    rows={3}
+                    value={toMultiline(
+                      (form["target_locations"] as string[]) ?? []
+                    )}
+                    onChange={(e) =>
+                      setField(
+                        "target_locations",
+                        fromMultiline(e.target.value)
+                      )
+                    }
+                  />
+                </div>
+                <div>
+                  <Label>Allowed sources (one per line)</Label>
+                  <Textarea
+                    rows={2}
+                    value={toMultiline(
+                      (form["allowed_sources"] as string[]) ?? []
+                    )}
+                    onChange={(e) =>
+                      setField(
+                        "allowed_sources",
+                        fromMultiline(e.target.value)
+                      )
+                    }
+                  />
+                </div>
+                <div>
+                  <Label>Excluded keywords (one per line)</Label>
+                  <Textarea
+                    rows={2}
+                    value={toMultiline(
+                      (form["excluded_keywords"] as string[]) ?? []
+                    )}
+                    onChange={(e) =>
+                      setField(
+                        "excluded_keywords",
+                        fromMultiline(e.target.value)
+                      )
+                    }
+                  />
+                </div>
+                <div>
+                  <Label>Company blacklist (one per line)</Label>
+                  <Textarea
+                    rows={2}
+                    value={toMultiline(
+                      (form["company_blacklist"] as string[]) ?? []
+                    )}
+                    onChange={(e) =>
+                      setField(
+                        "company_blacklist",
+                        fromMultiline(e.target.value)
+                      )
+                    }
+                  />
+                </div>
+                <div>
+                  <Label>Company whitelist (one per line)</Label>
+                  <Textarea
+                    rows={2}
+                    value={toMultiline(
+                      (form["company_whitelist"] as string[]) ?? []
+                    )}
+                    onChange={(e) =>
+                      setField(
+                        "company_whitelist",
+                        fromMultiline(e.target.value)
+                      )
+                    }
+                  />
+                </div>
+                <div>
+                  <Label>Target industries (one per line)</Label>
+                  <Textarea
+                    rows={2}
+                    value={toMultiline(
+                      (form["target_industries"] as string[]) ?? []
+                    )}
+                    onChange={(e) =>
+                      setField(
+                        "target_industries",
+                        fromMultiline(e.target.value)
+                      )
+                    }
+                  />
+                </div>
+                <div>
+                  <Label>Excluded industries (one per line)</Label>
+                  <Textarea
+                    rows={2}
+                    value={toMultiline(
+                      (form["excluded_industries"] as string[]) ?? []
+                    )}
+                    onChange={(e) =>
+                      setField(
+                        "excluded_industries",
+                        fromMultiline(e.target.value)
+                      )
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-4">
+                <div>
+                  <Label>Freshness (days)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={(form["freshness_days"] as number) ?? 30}
+                    onChange={(e) =>
+                      setField("freshness_days", Number(e.target.value))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label>Min salary floor</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={(form["min_salary_floor"] as number) ?? ""}
+                    onChange={(e) =>
+                      setField(
+                        "min_salary_floor",
+                        e.target.value ? Number(e.target.value) : null
+                      )
+                    }
+                    placeholder="No minimum"
+                  />
+                </div>
+                <div>
+                  <Label>Min match score</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={(form["min_match_score"] as number) ?? 70}
+                    onChange={(e) =>
+                      setField("min_match_score", Number(e.target.value))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label>Max jobs / run</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={(form["max_jobs_per_run"] as number) ?? 25}
+                    onChange={(e) =>
+                      setField("max_jobs_per_run", Number(e.target.value))
+                    }
+                  />
+                </div>
               </div>
             </section>
 
-            <section className="rounded-lg border bg-card p-6">
-              <h2 className="text-xl font-semibold">Save changes</h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Update automation rules whenever your target roles, locations, or safety limits
-                change.
-              </p>
+            {/* Scheduling */}
+            <section className="space-y-3">
+              <h2 className="text-lg font-semibold">Scheduling</h2>
+              <Toggle
+                checked={!!form["schedule_enabled"]}
+                onChange={(v) => setField("schedule_enabled", v)}
+                label="Enable scheduled runs"
+                description="Automatically run the pipeline on a schedule"
+              />
+              {form["schedule_enabled"] ? (
+                <div className="space-y-3">
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div>
+                      <Label>Cron expression</Label>
+                      <Input
+                        value={(form["schedule_cron"] as string) ?? ""}
+                        onChange={(e) =>
+                          setField("schedule_cron", e.target.value || null)
+                        }
+                        placeholder="0 9 * * 1-5"
+                      />
+                    </div>
+                    <div>
+                      <Label>Timezone</Label>
+                      <Input
+                        value={(form["schedule_timezone"] as string) ?? "UTC"}
+                        onChange={(e) =>
+                          setField("schedule_timezone", e.target.value)
+                        }
+                      />
+                    </div>
+                    <div>
+                      <Label>Daily limit</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={
+                          (form["max_applications_per_day"] as number) ?? 5
+                        }
+                        onChange={(e) =>
+                          setField(
+                            "max_applications_per_day",
+                            Number(e.target.value)
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
 
-              <Button
-                type="button"
-                className="mt-6 w-full"
-                onClick={() => saveMutation.mutate()}
-                disabled={saveMutation.isPending || settingsQuery.isLoading}
-              >
-                {saveMutation.isPending ? "Saving..." : "Save automation settings"}
-              </Button>
+                  {/* Preset buttons */}
+                  {schedule?.presets && schedule.presets.length > 0 ? (
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Presets</p>
+                      <div className="flex flex-wrap gap-2">
+                        {schedule.presets.map((p) => (
+                          <button
+                            key={p.cron}
+                            onClick={() => setField("schedule_cron", p.cron)}
+                            className={[
+                              "rounded-full border px-3 py-1 text-xs transition-colors",
+                              form["schedule_cron"] === p.cron
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "border-border text-muted-foreground hover:border-primary/50",
+                            ].join(" ")}
+                            title={p.description}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
 
-              {message && <p className="mt-3 text-sm text-muted-foreground">{message}</p>}
+                  <Toggle
+                    checked={!!form["schedule_paused"]}
+                    onChange={(v) => setField("schedule_paused", v)}
+                    label="Pause schedule"
+                    description="Temporarily pause without disabling"
+                  />
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <Label>Run window start (hour, 0-23)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={23}
+                        value={(form["run_window_start"] as number) ?? ""}
+                        onChange={(e) =>
+                          setField(
+                            "run_window_start",
+                            e.target.value ? Number(e.target.value) : null
+                          )
+                        }
+                        placeholder="Any"
+                      />
+                    </div>
+                    <div>
+                      <Label>Run window end (hour, 0-23)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={23}
+                        value={(form["run_window_end"] as number) ?? ""}
+                        onChange={(e) =>
+                          setField(
+                            "run_window_end",
+                            e.target.value ? Number(e.target.value) : null
+                          )
+                        }
+                        placeholder="Any"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </section>
 
-            <section className="rounded-lg border bg-card p-6">
-              <h2 className="text-xl font-semibold">Run now</h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Trigger a manual automation cycle using your current settings.
-              </p>
-
-              <label className="mt-4 flex items-start gap-3 rounded-md border p-4">
-                <input
-                  type="checkbox"
-                  className="mt-1 h-4 w-4"
-                  checked={dryRunMode}
-                  onChange={(event) => setDryRunMode(event.target.checked)}
+            {/* Notifications */}
+            <section className="space-y-3">
+              <h2 className="text-lg font-semibold">Notifications</h2>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Toggle
+                  checked={!!form["email_digest_enabled"]}
+                  onChange={(v) => setField("email_digest_enabled", v)}
+                  label="Email digest"
+                  description="Receive periodic email summaries"
                 />
-                <span>
-                  <span className="block text-sm font-medium">Dry run mode</span>
-                  <span className="mt-1 block text-sm text-muted-foreground">
-                    Simulates selection without creating real applications.
-                  </span>
-                </span>
-              </label>
-
-              <Button
-                type="button"
-                className="mt-4 w-full"
-                onClick={() => runNowMutation.mutate()}
-                disabled={runNowMutation.isPending}
-              >
-                {runNowMutation.isPending ? "Running..." : "Run automation now"}
-              </Button>
-
-              {runMessage && <p className="mt-3 text-sm text-muted-foreground">{runMessage}</p>}
-            </section>
-          </div>
-        </div>
-
-        <section className="rounded-lg border bg-card p-6">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Recent runs</h2>
-            <p className="text-sm text-muted-foreground">
-              {runsQuery.data ? `${runsQuery.data.total} total runs` : "Run history"}
-            </p>
-          </div>
-
-          {runsQuery.isLoading && (
-            <div className="rounded-md border p-4 text-sm text-muted-foreground">
-              Loading run history...
-            </div>
-          )}
-
-          {runsQuery.data && runsQuery.data.items.length === 0 && (
-            <div className="rounded-md border p-4 text-sm text-muted-foreground">
-              No automation runs yet. Start with a dry run to validate your current settings.
-            </div>
-          )}
-
-          {runsQuery.data && runsQuery.data.items.length > 0 && (
-            <div className="space-y-3">
-              {runsQuery.data.items.map((run) => (
-                <div key={run.id} className="rounded-md border p-4">
-                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                    <p className="text-sm font-medium">
-                      {new Date(run.started_at).toLocaleString()} • {run.status}
-                    </p>
-                    <p className="text-xs text-muted-foreground">{run.triggered_by}</p>
-                  </div>
-                  <div className="mt-3 grid gap-2 text-sm text-muted-foreground md:grid-cols-4">
-                    <p>Matched: {run.matched_jobs_count}</p>
-                    <p>Reviewed: {run.reviewed_jobs_count}</p>
-                    <p>Applied: {run.applied_jobs_count}</p>
-                    <p>Skipped: {run.skipped_jobs_count}</p>
-                  </div>
-                  <div className="mt-3 flex justify-end">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setSelectedRun(run)}
+                {form["email_digest_enabled"] ? (
+                  <div>
+                    <Label>Frequency</Label>
+                    <select
+                      className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                      value={(form["email_digest_frequency"] as string) ?? "weekly"}
+                      onChange={(e) =>
+                        setField("email_digest_frequency", e.target.value)
+                      }
                     >
-                      Details
-                    </Button>
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                    </select>
                   </div>
-                </div>
+                ) : null}
+                <Toggle
+                  checked={!!form["high_match_alert_enabled"]}
+                  onChange={(v) => setField("high_match_alert_enabled", v)}
+                  label="High-match alerts"
+                  description="Get notified when a very high-scoring match is found"
+                />
+                {form["high_match_alert_enabled"] ? (
+                  <div>
+                    <Label>Alert threshold</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={
+                        (form["high_match_alert_threshold"] as number) ?? 90
+                      }
+                      onChange={(e) =>
+                        setField(
+                          "high_match_alert_threshold",
+                          Number(e.target.value)
+                        )
+                      }
+                    />
+                  </div>
+                ) : null}
+              </div>
+            </section>
+
+            {/* Save button */}
+            <div className="flex justify-end">
+              <Button
+                onClick={() => saveMut.mutate(form as AutomationPipelineSettings)}
+                disabled={saveMut.isPending}
+              >
+                {saveMut.isPending ? "Saving…" : "Save Settings"}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {/* ==================== RUNS TAB ==================== */}
+        {tab === "runs" ? (
+          <div className="flex gap-4">
+            {/* Run list */}
+            <div className="w-full max-w-md space-y-1">
+              <h2 className="mb-2 text-lg font-semibold">
+                Run History ({runsQ.data?.total ?? 0})
+              </h2>
+              {runs.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No runs yet. Click &quot;Run Pipeline&quot; to start.
+                </p>
+              ) : null}
+              {runs.map((run) => (
+                <button
+                  key={run.id}
+                  onClick={() => setSelectedRunId(run.id)}
+                  className={[
+                    "w-full rounded-lg border p-3 text-left transition-colors",
+                    selectedRunId === run.id
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:bg-muted/50",
+                  ].join(" ")}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium">
+                      {run.triggered_by}
+                    </span>
+                    <span
+                      className={`text-xs font-medium ${
+                        run.status === "completed"
+                          ? "text-green-600"
+                          : run.status === "failed"
+                            ? "text-red-600"
+                            : run.status === "cancelled"
+                              ? "text-yellow-600"
+                              : "text-blue-600"
+                      }`}
+                    >
+                      {run.status}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {fmtDate(run.started_at)}
+                  </p>
+                  <div className="mt-1 flex gap-3 text-xs text-muted-foreground">
+                    <span>
+                      {run.matched_jobs_count} matched
+                    </span>
+                    <span>{run.applied_jobs_count} applied</span>
+                    <span>{run.queued_for_review_count} queued</span>
+                  </div>
+                </button>
               ))}
             </div>
-          )}
-        </section>
 
-        {selectedRun && (
-          <>
-            <button
-              type="button"
-              className="fixed inset-0 z-40 bg-black/40"
-              onClick={() => setSelectedRun(null)}
-              aria-label="Close run details"
-            />
-
-            <aside className="fixed inset-y-0 right-0 z-50 w-full max-w-2xl overflow-y-auto border-l bg-card p-6 shadow-xl">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h2 className="text-2xl font-semibold">Run details</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {new Date(selectedRun.started_at).toLocaleString()} • {selectedRun.status}
-                  </p>
+            {/* Run detail */}
+            <div className="flex-1">
+              {selectedRun ? (
+                <RunDetail
+                  run={selectedRun}
+                  onCancel={() => cancelRunMut.mutate(selectedRun.id)}
+                  onRetry={() => retryRunMut.mutate(selectedRun.id)}
+                />
+              ) : (
+                <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
+                  Select a run to view details
                 </div>
-                <Button type="button" variant="outline" onClick={() => setSelectedRun(null)}>
-                  Close
-                </Button>
-              </div>
+              )}
+            </div>
+          </div>
+        ) : null}
 
-              <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-md border p-3 text-sm">
-                  <p className="text-xs text-muted-foreground">Matched</p>
-                  <p className="mt-1 font-medium">{selectedRun.matched_jobs_count}</p>
-                </div>
-                <div className="rounded-md border p-3 text-sm">
-                  <p className="text-xs text-muted-foreground">Reviewed</p>
-                  <p className="mt-1 font-medium">{selectedRun.reviewed_jobs_count}</p>
-                </div>
-                <div className="rounded-md border p-3 text-sm">
-                  <p className="text-xs text-muted-foreground">Applied</p>
-                  <p className="mt-1 font-medium">{selectedRun.applied_jobs_count}</p>
-                </div>
-                <div className="rounded-md border p-3 text-sm">
-                  <p className="text-xs text-muted-foreground">Skipped</p>
-                  <p className="mt-1 font-medium">{selectedRun.skipped_jobs_count}</p>
-                </div>
-              </div>
+        {/* ==================== QUEUE TAB ==================== */}
+        {tab === "queue" ? (
+          <ApprovalQueueTab
+            items={queueItems}
+            total={queueQ.data?.total ?? 0}
+            onDecide={(id, action) => decideMut.mutate({ itemId: id, action })}
+            onBatchApprove={(ids) =>
+              batchDecideMut.mutate({ item_ids: ids, action: "approved" })
+            }
+            onBatchReject={(ids) =>
+              batchDecideMut.mutate({ item_ids: ids, action: "rejected" })
+            }
+            isLoading={decideMut.isPending || batchDecideMut.isPending}
+          />
+        ) : null}
 
-              <section className="mt-6 rounded-md border p-4">
-                <h3 className="font-medium">Created applications</h3>
-                {createdApplicationIds.length > 0 ? (
-                  <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-                    {createdApplicationIds.map((applicationId) => (
-                      <li key={applicationId} className="rounded border bg-muted/40 px-3 py-2">
-                        {applicationId}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-3 text-sm text-muted-foreground">
-                    No applications were created in this run.
-                  </p>
-                )}
-              </section>
+        {/* ==================== ANALYTICS TAB ==================== */}
+        {tab === "analytics" ? (
+          <AnalyticsTab analytics={analytics ?? null} />
+        ) : null}
 
-              <section className="mt-4 rounded-md border p-4">
-                <h3 className="font-medium">Skipped jobs</h3>
-                {skippedItems.length > 0 ? (
-                  <div className="mt-3 space-y-2">
-                    {skippedItems.map((item, index) => (
-                      <div key={`${item.job_posting_id}-${index}`} className="rounded border bg-muted/40 p-3 text-sm">
-                        <p className="font-medium">{item.job_posting_id}</p>
-                        <p className="mt-1 text-muted-foreground">Reason: {item.reason}</p>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-3 text-sm text-muted-foreground">
-                    No skipped-job details were recorded.
-                  </p>
-                )}
-              </section>
-
-              <section className="mt-4 rounded-md border p-4">
-                <h3 className="font-medium">Raw run summary</h3>
-                <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded bg-muted p-3 font-mono text-xs">
-                  {JSON.stringify(selectedRun.summary, null, 2)}
-                </pre>
-              </section>
-            </aside>
-          </>
-        )}
+        {/* ==================== NOTIFICATIONS TAB ==================== */}
+        {tab === "notifications" ? (
+          <NotificationsTab
+            data={notifications ?? null}
+            onMarkRead={(id) => markReadMut.mutate(id)}
+            onMarkAllRead={() => markAllReadMut.mutate()}
+          />
+        ) : null}
       </div>
     </AppShell>
+  );
+}
+
+/* ================================================================== */
+/*  SUB-COMPONENTS                                                     */
+/* ================================================================== */
+
+function RunDetail({
+  run,
+  onCancel,
+  onRetry,
+}: {
+  run: AutomationRun;
+  onCancel: () => void;
+  onRetry: () => void;
+}) {
+  const summary = run.summary as Record<string, unknown>;
+  const tiers = (summary["confidence_tiers"] as Record<string, number>) ?? {};
+  const scoreDist =
+    (summary["score_distribution"] as Record<string, number>) ?? {};
+  const timing = (summary["timing"] as Record<string, number>) ?? {};
+  const skipped = (summary["skipped"] as Array<Record<string, unknown>>) ?? [];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold">
+          Run — {run.triggered_by} — {run.status}
+        </h3>
+        <div className="flex gap-2">
+          {run.status === "running" ? (
+            <Button variant="outline" size="sm" onClick={onCancel}>
+              Cancel
+            </Button>
+          ) : null}
+          {run.status === "failed" || run.status === "cancelled" ? (
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              Retry
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      {run.error_message ? (
+        <p className="text-sm text-destructive">{run.error_message}</p>
+      ) : null}
+
+      {/* Stats grid */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatCard label="Matched" value={run.matched_jobs_count} />
+        <StatCard label="Applied" value={run.applied_jobs_count} />
+        <StatCard label="Queued" value={run.queued_for_review_count} />
+        <StatCard label="Skipped" value={run.skipped_jobs_count} />
+        <StatCard label="Evaluated" value={run.jobs_evaluated} />
+        <StatCard label="New matches" value={run.new_matches_count} />
+        <StatCard
+          label="Scoring time"
+          value={fmtDuration(run.scoring_duration_ms)}
+        />
+        <StatCard
+          label="Total time"
+          value={fmtDuration(run.total_duration_ms)}
+        />
+      </div>
+
+      {/* Confidence tiers */}
+      {Object.keys(tiers).length > 0 ? (
+        <div>
+          <h4 className="mb-1 text-sm font-semibold">Confidence Tiers</h4>
+          <div className="flex gap-3">
+            {Object.entries(tiers).map(([tier, count]) => (
+              <div key={tier} className="flex items-center gap-1.5">
+                <TierBadge tier={tier} />
+                <span className="text-sm font-medium">{count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Score distribution */}
+      {Object.keys(scoreDist).length > 0 ? (
+        <div>
+          <h4 className="mb-1 text-sm font-semibold">Score Distribution</h4>
+          <div className="flex gap-2">
+            {Object.entries(scoreDist).map(([bucket, count]) => (
+              <div
+                key={bucket}
+                className="rounded border border-border px-2 py-1 text-xs"
+              >
+                <span className="font-medium">{bucket}</span>: {count}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Timing */}
+      <div className="text-xs text-muted-foreground">
+        <span>Started: {fmtDate(run.started_at)}</span>
+        {" · "}
+        <span>Finished: {fmtDate(run.finished_at)}</span>
+        {timing["scoring_ms"] != null ? (
+          <>
+            {" · "}
+            <span>Scoring: {timing["scoring_ms"]}ms</span>
+          </>
+        ) : null}
+      </div>
+
+      {/* Skipped jobs */}
+      {skipped.length > 0 ? (
+        <details className="text-xs">
+          <summary className="cursor-pointer font-medium">
+            Skipped jobs ({skipped.length})
+          </summary>
+          <div className="mt-1 max-h-60 overflow-auto rounded border border-border">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-border bg-muted/50">
+                  <th className="p-2">Job Posting</th>
+                  <th className="p-2">Reason</th>
+                  <th className="p-2">Tier</th>
+                  <th className="p-2">Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {skipped.map((s, i) => (
+                  <tr key={i} className="border-b border-border last:border-0">
+                    <td className="p-2 font-mono">
+                      {String(s["job_posting_id"] ?? "").slice(0, 8)}…
+                    </td>
+                    <td className="p-2">{String(s["reason"] ?? "")}</td>
+                    <td className="p-2">
+                      {s["tier"] ? (
+                        <TierBadge tier={String(s["tier"])} />
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="p-2">
+                      {s["score"] != null ? String(s["score"]) : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      ) : null}
+
+      {/* Raw summary */}
+      <details className="text-xs">
+        <summary className="cursor-pointer font-medium">Raw summary</summary>
+        <pre className="mt-1 max-h-60 overflow-auto rounded border border-border bg-muted/50 p-3">
+          {JSON.stringify(summary, null, 2)}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Approval queue                                                     */
+/* ------------------------------------------------------------------ */
+
+function ApprovalQueueTab({
+  items,
+  total,
+  onDecide,
+  onBatchApprove,
+  onBatchReject,
+  isLoading,
+}: {
+  items: Array<{
+    id: string;
+    score: number;
+    recommendation: string;
+    status: string;
+    job_title: string | null;
+    job_company: string | null;
+    job_location: string | null;
+    created_at: string;
+  }>;
+  total: number;
+  onDecide: (
+    id: string,
+    action: "approved" | "rejected" | "deferred"
+  ) => void;
+  onBatchApprove: (ids: string[]) => void;
+  onBatchReject: (ids: string[]) => void;
+  isLoading: boolean;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const toggleSelect = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const toggleAll = () => {
+    if (selected.size === items.length) setSelected(new Set());
+    else setSelected(new Set(items.map((i) => i.id)));
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">Approval Queue ({total})</h2>
+        {selected.size > 0 ? (
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              onClick={() => onBatchApprove(Array.from(selected))}
+              disabled={isLoading}
+            >
+              Approve ({selected.size})
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onBatchReject(Array.from(selected))}
+              disabled={isLoading}
+            >
+              Reject ({selected.size})
+            </Button>
+          </div>
+        ) : null}
+      </div>
+
+      {items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No items pending review. Run the pipeline to discover new matches.
+        </p>
+      ) : (
+        <div className="overflow-auto rounded-lg border border-border">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/50">
+                <th className="p-3">
+                  <input
+                    type="checkbox"
+                    checked={
+                      items.length > 0 && selected.size === items.length
+                    }
+                    onChange={toggleAll}
+                    className="h-4 w-4 rounded border-border"
+                  />
+                </th>
+                <th className="p-3">Job</th>
+                <th className="p-3">Company</th>
+                <th className="p-3">Location</th>
+                <th className="p-3">Score</th>
+                <th className="p-3">Tier</th>
+                <th className="p-3">Added</th>
+                <th className="p-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item) => (
+                <tr
+                  key={item.id}
+                  className="border-b border-border last:border-0 hover:bg-muted/30"
+                >
+                  <td className="p-3">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(item.id)}
+                      onChange={() => toggleSelect(item.id)}
+                      className="h-4 w-4 rounded border-border"
+                    />
+                  </td>
+                  <td className="p-3 font-medium">
+                    {item.job_title ?? "Unknown"}
+                  </td>
+                  <td className="p-3">{item.job_company ?? "—"}</td>
+                  <td className="p-3 text-xs">{item.job_location ?? "—"}</td>
+                  <td className="p-3">
+                    <span className="font-mono font-medium">
+                      {item.score.toFixed(1)}
+                    </span>
+                  </td>
+                  <td className="p-3">
+                    <TierBadge tier={item.recommendation} />
+                  </td>
+                  <td className="p-3 text-xs text-muted-foreground">
+                    {fmtDate(item.created_at)}
+                  </td>
+                  <td className="p-3">
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => onDecide(item.id, "approved")}
+                        disabled={isLoading}
+                        className="rounded bg-green-600 px-2 py-0.5 text-xs text-white hover:bg-green-700"
+                      >
+                        ✓
+                      </button>
+                      <button
+                        onClick={() => onDecide(item.id, "rejected")}
+                        disabled={isLoading}
+                        className="rounded bg-red-600 px-2 py-0.5 text-xs text-white hover:bg-red-700"
+                      >
+                        ✗
+                      </button>
+                      <button
+                        onClick={() => onDecide(item.id, "deferred")}
+                        disabled={isLoading}
+                        className="rounded border border-border px-2 py-0.5 text-xs hover:bg-muted"
+                      >
+                        Later
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Analytics                                                          */
+/* ------------------------------------------------------------------ */
+
+import type { AutomationAnalytics } from "@/lib/automation-api";
+
+function AnalyticsTab({
+  analytics,
+}: {
+  analytics: AutomationAnalytics | null;
+}) {
+  if (!analytics) {
+    return (
+      <p className="text-sm text-muted-foreground">Loading analytics…</p>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-lg font-semibold">Pipeline Analytics (30 days)</h2>
+
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <StatCard label="Total runs" value={analytics.total_runs} />
+        <StatCard label="Matches" value={analytics.total_matches} />
+        <StatCard label="Applications" value={analytics.total_applications} />
+        <StatCard label="Approvals" value={analytics.total_approvals} />
+        <StatCard label="Rejections" value={analytics.total_rejections} />
+        <StatCard
+          label="Avg score"
+          value={analytics.avg_match_score.toFixed(1)}
+        />
+      </div>
+
+      {/* Score distribution */}
+      {Object.keys(analytics.score_distribution).length > 0 ? (
+        <div>
+          <h3 className="mb-2 text-sm font-semibold">Score Distribution</h3>
+          <div className="flex gap-2">
+            {Object.entries(analytics.score_distribution).map(
+              ([bucket, count]) => {
+                const maxCount = Math.max(
+                  ...Object.values(analytics.score_distribution),
+                  1
+                );
+                const pct = Math.round((count / maxCount) * 100);
+                return (
+                  <div key={bucket} className="flex-1 text-center">
+                    <div className="mx-auto mb-1 h-24 w-full max-w-12 overflow-hidden rounded bg-muted">
+                      <div
+                        className="mt-auto w-full bg-primary transition-all"
+                        style={{ height: `${pct}%`, marginTop: `${100 - pct}%` }}
+                      />
+                    </div>
+                    <p className="text-xs font-medium">{count}</p>
+                    <p className="text-xs text-muted-foreground">{bucket}</p>
+                  </div>
+                );
+              }
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Application funnel */}
+      {Object.keys(analytics.application_funnel).length > 0 ? (
+        <div>
+          <h3 className="mb-2 text-sm font-semibold">Application Funnel</h3>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(analytics.application_funnel).map(
+              ([status, count]) => (
+                <div
+                  key={status}
+                  className="rounded-lg border border-border px-3 py-2 text-center"
+                >
+                  <p className="text-lg font-semibold">{count}</p>
+                  <p className="text-xs text-muted-foreground">{status}</p>
+                </div>
+              )
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Top companies */}
+      {analytics.top_companies.length > 0 ? (
+        <div>
+          <h3 className="mb-2 text-sm font-semibold">Top Companies</h3>
+          <div className="overflow-auto rounded-lg border border-border">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/50">
+                  <th className="p-2">Company</th>
+                  <th className="p-2">Matches</th>
+                  <th className="p-2">Avg Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {analytics.top_companies.map((c) => (
+                  <tr
+                    key={c.company}
+                    className="border-b border-border last:border-0"
+                  >
+                    <td className="p-2 font-medium">{c.company}</td>
+                    <td className="p-2">{c.match_count}</td>
+                    <td className="p-2">{c.avg_score.toFixed(1)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Source effectiveness */}
+      {analytics.source_effectiveness.length > 0 ? (
+        <div>
+          <h3 className="mb-2 text-sm font-semibold">Source Effectiveness</h3>
+          <div className="flex flex-wrap gap-3">
+            {analytics.source_effectiveness.map((s) => (
+              <div
+                key={s.source}
+                className="rounded-lg border border-border px-3 py-2"
+              >
+                <p className="text-sm font-medium capitalize">{s.source}</p>
+                <p className="text-xs text-muted-foreground">
+                  {s.matches} matches · avg {s.avg_score.toFixed(1)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Match trend */}
+      {analytics.match_trend.length > 0 ? (
+        <div>
+          <h3 className="mb-2 text-sm font-semibold">Match Trend</h3>
+          <div className="overflow-auto">
+            <div className="flex items-end gap-1" style={{ minHeight: 120 }}>
+              {analytics.match_trend.map((d) => {
+                const maxC = Math.max(
+                  ...analytics.match_trend.map((x) => x.count),
+                  1
+                );
+                const h = Math.round((d.count / maxC) * 100);
+                return (
+                  <div
+                    key={d.date}
+                    className="group relative flex-1"
+                    title={`${d.date}: ${d.count} matches, avg ${d.avg_score}`}
+                  >
+                    <div
+                      className="mx-auto w-full max-w-8 rounded-t bg-primary/70 transition-all hover:bg-primary"
+                      style={{ height: `${Math.max(h, 4)}px` }}
+                    />
+                    <p className="mt-1 text-center text-[9px] text-muted-foreground">
+                      {d.date.slice(5)}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Daily stats */}
+      {analytics.daily_stats.length > 0 ? (
+        <div>
+          <h3 className="mb-2 text-sm font-semibold">Daily Activity</h3>
+          <div className="overflow-auto rounded-lg border border-border">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-border bg-muted/50">
+                  <th className="p-2">Date</th>
+                  <th className="p-2">Runs</th>
+                  <th className="p-2">Matched</th>
+                  <th className="p-2">Applied</th>
+                </tr>
+              </thead>
+              <tbody>
+                {analytics.daily_stats.map((d) => (
+                  <tr
+                    key={d.date}
+                    className="border-b border-border last:border-0"
+                  >
+                    <td className="p-2">{d.date}</td>
+                    <td className="p-2">{d.runs}</td>
+                    <td className="p-2">{d.matched}</td>
+                    <td className="p-2">{d.applied}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Notifications                                                      */
+/* ------------------------------------------------------------------ */
+
+import type { NotificationList } from "@/lib/automation-api";
+
+function NotificationsTab({
+  data,
+  onMarkRead,
+  onMarkAllRead,
+}: {
+  data: NotificationList | null;
+  onMarkRead: (id: string) => void;
+  onMarkAllRead: () => void;
+}) {
+  if (!data) {
+    return (
+      <p className="text-sm text-muted-foreground">Loading notifications…</p>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">
+          Notifications ({data.total})
+          {data.unread_count > 0 ? (
+            <span className="ml-2 text-sm font-normal text-muted-foreground">
+              {data.unread_count} unread
+            </span>
+          ) : null}
+        </h2>
+        {data.unread_count > 0 ? (
+          <Button variant="outline" size="sm" onClick={onMarkAllRead}>
+            Mark all read
+          </Button>
+        ) : null}
+      </div>
+
+      {data.items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No notifications yet.</p>
+      ) : (
+        <div className="space-y-2">
+          {data.items.map((n) => (
+            <div
+              key={n.id}
+              className={[
+                "rounded-lg border p-3 transition-colors",
+                n.is_read
+                  ? "border-border bg-card"
+                  : "border-primary/30 bg-primary/5",
+              ].join(" ")}
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-sm font-medium">{n.title}</p>
+                  <p className="text-xs text-muted-foreground">{n.message}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {fmtDate(n.created_at)} · {n.type}
+                  </p>
+                </div>
+                {!n.is_read ? (
+                  <button
+                    onClick={() => onMarkRead(n.id)}
+                    className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted"
+                  >
+                    Mark read
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

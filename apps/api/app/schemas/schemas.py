@@ -216,11 +216,39 @@ class AutomationPipelineSettingsUpdate(BaseSchema):
     min_match_score: float = 70.0
     max_jobs_per_run: int = 25
     max_applications_per_day: int = 5
+    # Scheduling
+    schedule_enabled: bool = False
+    schedule_cron: str | None = None
+    schedule_timezone: str = "UTC"
+    schedule_paused: bool = False
+    run_window_start: int | None = None
+    run_window_end: int | None = None
+    # Enhanced discovery
+    freshness_days: int = 30
+    company_blacklist: list[str] = Field(default_factory=list)
+    company_whitelist: list[str] = Field(default_factory=list)
+    min_salary_floor: int | None = None
+    experience_levels: list[str] = Field(default_factory=list)
+    employment_types: list[str] = Field(default_factory=list)
+    target_industries: list[str] = Field(default_factory=list)
+    excluded_industries: list[str] = Field(default_factory=list)
+    # Confidence tiers
+    confidence_auto_apply_threshold: float = 90.0
+    confidence_review_threshold: float = 75.0
+    confidence_save_threshold: float = 65.0
+    # Persona
+    persona_id: UUID | None = None
+    # Notifications
+    email_digest_enabled: bool = False
+    email_digest_frequency: str = "weekly"
+    high_match_alert_enabled: bool = False
+    high_match_alert_threshold: float = 90.0
 
 
 class AutomationPipelineSettingsResponse(AutomationPipelineSettingsUpdate):
     id: UUID
     user_id: UUID
+    next_scheduled_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -236,10 +264,19 @@ class AutomationReadinessResponse(BaseSchema):
     ready_for_auto_apply: bool
     blockers: list[str] = Field(default_factory=list)
     suggestions: list[str] = Field(default_factory=list)
+    # Enhanced readiness
+    profile_completeness: float = 0.0
+    profile_completeness_breakdown: dict = Field(default_factory=dict)
+    data_quality_warnings: list[str] = Field(default_factory=list)
+    skill_coverage: float = 0.0
+    resume_quality_score: float = 0.0
 
 
 class AutomationRunRequest(BaseSchema):
     dry_run: bool = True
+    persona_id: UUID | None = None
+    override_min_score: float | None = None
+    override_max_jobs: int | None = None
 
 
 class AutomationRunResponse(BaseSchema):
@@ -251,6 +288,13 @@ class AutomationRunResponse(BaseSchema):
     reviewed_jobs_count: int
     applied_jobs_count: int
     skipped_jobs_count: int
+    queued_for_review_count: int = 0
+    jobs_evaluated: int = 0
+    new_matches_count: int = 0
+    expired_since_last_run: int = 0
+    scoring_duration_ms: int | None = None
+    total_duration_ms: int | None = None
+    error_message: str | None = None
     summary: dict
     started_at: datetime
     finished_at: datetime | None
@@ -260,6 +304,91 @@ class AutomationRunResponse(BaseSchema):
 class AutomationRunListResponse(BaseSchema):
     items: list[AutomationRunResponse] = Field(default_factory=list)
     total: int
+
+
+# Approval queue
+class ApprovalQueueItemResponse(BaseSchema):
+    id: UUID
+    user_id: UUID
+    job_posting_id: UUID
+    job_match_id: UUID
+    pipeline_run_id: UUID | None = None
+    status: str
+    score: float
+    recommendation: str
+    decided_at: datetime | None = None
+    expires_at: datetime | None = None
+    notes: str | None = None
+    created_at: datetime
+    # Embedded info
+    job_title: str | None = None
+    job_company: str | None = None
+    job_location: str | None = None
+
+
+class ApprovalQueueListResponse(BaseSchema):
+    items: list[ApprovalQueueItemResponse] = Field(default_factory=list)
+    total: int
+
+
+class ApprovalDecisionRequest(BaseSchema):
+    action: str  # approved, rejected, deferred
+    notes: str | None = None
+
+
+class ApprovalBatchDecisionRequest(BaseSchema):
+    item_ids: list[UUID]
+    action: str
+    notes: str | None = None
+
+
+# Analytics
+class AutomationAnalyticsResponse(BaseSchema):
+    total_runs: int = 0
+    total_matches: int = 0
+    total_applications: int = 0
+    total_approvals: int = 0
+    total_rejections: int = 0
+    avg_match_score: float = 0.0
+    score_distribution: dict = Field(default_factory=dict)
+    match_trend: list[dict] = Field(default_factory=list)
+    top_companies: list[dict] = Field(default_factory=list)
+    application_funnel: dict = Field(default_factory=dict)
+    source_effectiveness: list[dict] = Field(default_factory=list)
+    daily_stats: list[dict] = Field(default_factory=list)
+
+
+# Notifications
+class NotificationResponse(BaseSchema):
+    id: UUID
+    type: str
+    title: str
+    message: str
+    data: dict = Field(default_factory=dict)
+    is_read: bool
+    created_at: datetime
+
+
+class NotificationListResponse(BaseSchema):
+    items: list[NotificationResponse] = Field(default_factory=list)
+    total: int
+    unread_count: int = 0
+
+
+# Schedule
+class SchedulePreset(BaseSchema):
+    label: str
+    cron: str
+    description: str
+
+
+class ScheduleInfoResponse(BaseSchema):
+    schedule_enabled: bool
+    schedule_cron: str | None = None
+    schedule_timezone: str = "UTC"
+    schedule_paused: bool = False
+    next_scheduled_at: datetime | None = None
+    presets: list[SchedulePreset] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

@@ -152,6 +152,12 @@ class User(Base):
     job_postings: Mapped[list["JobPosting"]] = relationship(
         "JobPosting", back_populates="user"
     )
+    approval_queue: Mapped[list["AutomationApprovalQueueItem"]] = relationship(
+        "AutomationApprovalQueueItem", back_populates="user", cascade="all, delete-orphan"
+    )
+    notifications: Mapped[list["AutomationNotification"]] = relationship(
+        "AutomationNotification", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -374,6 +380,42 @@ class AutomationPipelineSettings(Base):
     min_match_score: Mapped[float] = mapped_column(Float, default=70.0, nullable=False)
     max_jobs_per_run: Mapped[int] = mapped_column(Integer, default=25, nullable=False)
     max_applications_per_day: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
+
+    # Scheduling
+    schedule_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    schedule_cron: Mapped[str | None] = mapped_column(String(100))
+    schedule_timezone: Mapped[str] = mapped_column(String(60), default="UTC", nullable=False)
+    schedule_paused: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    run_window_start: Mapped[int | None] = mapped_column(Integer)  # hour 0-23
+    run_window_end: Mapped[int | None] = mapped_column(Integer)  # hour 0-23
+    next_scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Enhanced discovery
+    freshness_days: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
+    company_blacklist: Mapped[list[str]] = mapped_column(ARRAY(String(200)), default=list)
+    company_whitelist: Mapped[list[str]] = mapped_column(ARRAY(String(200)), default=list)
+    min_salary_floor: Mapped[int | None] = mapped_column(Integer)
+    experience_levels: Mapped[list[str]] = mapped_column(ARRAY(String(50)), default=list)
+    employment_types: Mapped[list[str]] = mapped_column(ARRAY(String(50)), default=list)
+    target_industries: Mapped[list[str]] = mapped_column(ARRAY(String(200)), default=list)
+    excluded_industries: Mapped[list[str]] = mapped_column(ARRAY(String(200)), default=list)
+
+    # Confidence tiers
+    confidence_auto_apply_threshold: Mapped[float] = mapped_column(Float, default=90.0, nullable=False)
+    confidence_review_threshold: Mapped[float] = mapped_column(Float, default=75.0, nullable=False)
+    confidence_save_threshold: Mapped[float] = mapped_column(Float, default=65.0, nullable=False)
+
+    # Persona link
+    persona_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("personas.id", ondelete="SET NULL")
+    )
+
+    # Notifications
+    email_digest_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    email_digest_frequency: Mapped[str] = mapped_column(String(20), default="weekly", nullable=False)
+    high_match_alert_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    high_match_alert_threshold: Mapped[float] = mapped_column(Float, default=90.0, nullable=False)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -382,6 +424,7 @@ class AutomationPipelineSettings(Base):
     )
 
     user: Mapped["User"] = relationship("User", back_populates="automation_settings")
+    persona: Mapped["Persona | None"] = relationship("Persona", foreign_keys=[persona_id])
 
 
 class AutomationPipelineRun(Base):
@@ -399,6 +442,13 @@ class AutomationPipelineRun(Base):
     reviewed_jobs_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     applied_jobs_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     skipped_jobs_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    queued_for_review_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    jobs_evaluated: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    new_matches_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    expired_since_last_run: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    scoring_duration_ms: Mapped[int | None] = mapped_column(Integer)
+    total_duration_ms: Mapped[int | None] = mapped_column(Integer)
+    error_message: Mapped[str | None] = mapped_column(Text)
     summary: Mapped[dict] = mapped_column(JSONB, default=dict)
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -409,6 +459,82 @@ class AutomationPipelineRun(Base):
     )
 
     user: Mapped["User"] = relationship("User", back_populates="automation_runs")
+    approval_queue_items: Mapped[list["AutomationApprovalQueueItem"]] = relationship(
+        "AutomationApprovalQueueItem", back_populates="pipeline_run"
+    )
+
+
+class ApprovalStatusEnum(str, enum.Enum):
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+    deferred = "deferred"
+    expired = "expired"
+
+
+class AutomationApprovalQueueItem(Base):
+    __tablename__ = "automation_approval_queue"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    job_posting_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("job_postings.id", ondelete="CASCADE"), nullable=False
+    )
+    job_match_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("job_matches.id", ondelete="CASCADE"), nullable=False
+    )
+    pipeline_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("automation_pipeline_runs.id", ondelete="SET NULL")
+    )
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    score: Mapped[float] = mapped_column(Float, nullable=False)
+    recommendation: Mapped[str] = mapped_column(String(50), nullable=False)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="approval_queue")
+    job_posting: Mapped["JobPosting"] = relationship("JobPosting")
+    job_match: Mapped["JobMatch"] = relationship("JobMatch")
+    pipeline_run: Mapped["AutomationPipelineRun | None"] = relationship(
+        "AutomationPipelineRun", back_populates="approval_queue_items"
+    )
+
+
+class NotificationTypeEnum(str, enum.Enum):
+    high_match = "high_match"
+    run_completed = "run_completed"
+    run_failed = "run_failed"
+    daily_limit = "daily_limit"
+    digest = "digest"
+
+
+class AutomationNotification(Base):
+    __tablename__ = "automation_notifications"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    type: Mapped[str] = mapped_column(String(50), nullable=False)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    data: Mapped[dict] = mapped_column(JSONB, default=dict)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="notifications")
 
 
 # ---------------------------------------------------------------------------
