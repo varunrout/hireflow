@@ -266,11 +266,13 @@ def score_job(
         candidate_education_level,
         _education_level(required_edu),
     )
+    raw_remote = job.remote_type
+    remote_type_str = raw_remote.value if hasattr(raw_remote, "value") else raw_remote
     loc_score = _location_matches(
         job.location,
         candidate_location,
         pref.desired_locations if pref else None,
-        job.remote_type.value if job.remote_type else None,
+        remote_type_str if remote_type_str else None,
         pref.remote_preference if pref else None,
     )
     sal_score = _salary_fits(
