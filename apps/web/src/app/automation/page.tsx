@@ -193,6 +193,11 @@ export default function AutomationPage() {
   const runsQ = useQuery({
     queryKey: ["automation", "runs"],
     queryFn: () => automationApi.listRuns(50),
+    refetchInterval: (query) => {
+      const runs = query.state.data?.runs;
+      const hasRunning = runs?.some((r) => r.status === "running");
+      return hasRunning ? 3000 : false;
+    },
   });
   const queueQ = useQuery({
     queryKey: ["automation", "queue"],

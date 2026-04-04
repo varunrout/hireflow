@@ -22,9 +22,7 @@ def run_scheduled_pipeline(self, user_id: str) -> dict:
     It creates an async event loop to call the pipeline logic.
     """
     try:
-        result = asyncio.get_event_loop().run_until_complete(
-            _run_pipeline_async(UUID(user_id))
-        )
+        result = asyncio.run(_run_pipeline_async(UUID(user_id)))
         return result
     except Exception as exc:
         logger.exception("Scheduled pipeline run failed for user %s", user_id)
