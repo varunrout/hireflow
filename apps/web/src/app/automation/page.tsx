@@ -264,6 +264,14 @@ export default function AutomationPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["automation"] }),
   });
 
+  const deleteRunMut = useMutation({
+    mutationFn: automationApi.deleteRun,
+    onSuccess: () => {
+      setSelectedRunId(null);
+      qc.invalidateQueries({ queryKey: ["automation"] });
+    },
+  });
+
   const markReadMut = useMutation({
     mutationFn: automationApi.markNotificationRead,
     onSuccess: () =>
@@ -881,45 +889,61 @@ export default function AutomationPage() {
                 </p>
               ) : null}
               {runs.map((run) => (
-                <button
+                <div
                   key={run.id}
-                  onClick={() => setSelectedRunId(run.id)}
                   className={[
-                    "w-full rounded-lg border p-3 text-left transition-colors",
+                    "group relative w-full rounded-lg border p-3 text-left transition-colors",
                     selectedRunId === run.id
                       ? "border-primary bg-primary/5"
                       : "border-border hover:bg-muted/50",
                   ].join(" ")}
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium">
-                      {run.triggered_by}
-                    </span>
-                    <span
-                      className={`text-xs font-medium ${
-                        run.status === "completed"
-                          ? "text-green-600"
-                          : run.status === "failed"
-                            ? "text-red-600"
-                            : run.status === "cancelled"
-                              ? "text-yellow-600"
-                              : "text-blue-600"
-                      }`}
-                    >
-                      {run.status}
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {fmtDate(run.started_at)}
-                  </p>
-                  <div className="mt-1 flex gap-3 text-xs text-muted-foreground">
-                    <span>
-                      {run.matched_jobs_count} matched
-                    </span>
-                    <span>{run.applied_jobs_count} applied</span>
-                    <span>{run.queued_for_review_count} queued</span>
-                  </div>
-                </button>
+                  <button
+                    onClick={() => setSelectedRunId(run.id)}
+                    className="w-full text-left"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium">
+                        {run.triggered_by}
+                      </span>
+                      <span
+                        className={`text-xs font-medium ${
+                          run.status === "completed"
+                            ? "text-green-600"
+                            : run.status === "failed"
+                              ? "text-red-600"
+                              : run.status === "cancelled"
+                                ? "text-yellow-600"
+                                : "text-blue-600"
+                        }`}
+                      >
+                        {run.status}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {fmtDate(run.started_at)}
+                    </p>
+                    <div className="mt-1 flex gap-3 text-xs text-muted-foreground">
+                      <span>
+                        {run.matched_jobs_count} matched
+                      </span>
+                      <span>{run.applied_jobs_count} applied</span>
+                      <span>{run.queued_for_review_count} queued</span>
+                    </div>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (confirm("Delete this run from history?")) {
+                        deleteRunMut.mutate(run.id);
+                      }
+                    }}
+                    className="absolute right-2 top-2 hidden rounded p-1 text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive group-hover:inline-flex"
+                    title="Delete run"
+                  >
+                    ✕
+                  </button>
+                </div>
               ))}
             </div>
 
@@ -993,6 +1017,8 @@ function RunDetail({
     (summary["score_distribution"] as Record<string, number>) ?? {};
   const timing = (summary["timing"] as Record<string, number>) ?? {};
   const skipped = (summary["skipped"] as Array<Record<string, unknown>>) ?? [];
+  const matchedJobDetails = (summary["matched_job_details"] as Array<Record<string, unknown>>) ?? [];
+  const discoveredFromExternal = (summary["discovered_from_external"] as number) ?? 0;
 
   return (
     <div className="space-y-4">
@@ -1018,6 +1044,12 @@ function RunDetail({
         <p className="text-sm text-destructive">{run.error_message}</p>
       ) : null}
 
+      {summary["dry_run"] ? (
+        <div className="rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs text-yellow-800 dark:border-yellow-900 dark:bg-yellow-950 dark:text-yellow-300">
+          This was a dry run — no applications or queue items were created.
+        </div>
+      ) : null}
+
       {/* Stats grid */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard label="Matched" value={run.matched_jobs_count} />
@@ -1026,6 +1058,9 @@ function RunDetail({
         <StatCard label="Skipped" value={run.skipped_jobs_count} />
         <StatCard label="Evaluated" value={run.jobs_evaluated} />
         <StatCard label="New matches" value={run.new_matches_count} />
+        {discoveredFromExternal > 0 ? (
+          <StatCard label="Discovered" value={discoveredFromExternal} />
+        ) : null}
         <StatCard
           label="Scoring time"
           value={fmtDuration(run.scoring_duration_ms)}
@@ -1049,6 +1084,49 @@ function RunDetail({
             ))}
           </div>
         </div>
+      ) : null}
+
+      {/* Matched job details */}
+      {matchedJobDetails.length > 0 ? (
+        <details open className="text-xs">
+          <summary className="cursor-pointer text-sm font-semibold">
+            Matched Jobs ({matchedJobDetails.length})
+          </summary>
+          <div className="mt-1 max-h-80 overflow-auto rounded border border-border">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-border bg-muted/50">
+                  <th className="p-2">Job Title</th>
+                  <th className="p-2">Company</th>
+                  <th className="p-2">Location</th>
+                  <th className="p-2">Score</th>
+                  <th className="p-2">Tier</th>
+                </tr>
+              </thead>
+              <tbody>
+                {matchedJobDetails.map((job, i) => (
+                  <tr key={i} className="border-b border-border last:border-0 hover:bg-muted/30">
+                    <td className="p-2 font-medium">
+                      {String(job["title"] ?? "Untitled")}
+                    </td>
+                    <td className="p-2">{String(job["company"] ?? "Unknown")}</td>
+                    <td className="p-2 text-muted-foreground">
+                      {String(job["location"] ?? "—")}
+                    </td>
+                    <td className="p-2">
+                      <span className="font-mono font-medium">
+                        {Number(job["score"] ?? 0).toFixed(1)}
+                      </span>
+                    </td>
+                    <td className="p-2">
+                      {job["tier"] ? <TierBadge tier={String(job["tier"])} /> : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
       ) : null}
 
       {/* Score distribution */}
@@ -1091,7 +1169,8 @@ function RunDetail({
             <table className="w-full text-left">
               <thead>
                 <tr className="border-b border-border bg-muted/50">
-                  <th className="p-2">Job Posting</th>
+                  <th className="p-2">Job</th>
+                  <th className="p-2">Company</th>
                   <th className="p-2">Reason</th>
                   <th className="p-2">Tier</th>
                   <th className="p-2">Score</th>
@@ -1100,8 +1179,11 @@ function RunDetail({
               <tbody>
                 {skipped.map((s, i) => (
                   <tr key={i} className="border-b border-border last:border-0">
-                    <td className="p-2 font-mono">
-                      {String(s["job_posting_id"] ?? "").slice(0, 8)}…
+                    <td className="p-2 font-medium">
+                      {String(s["job_title"] ?? String(s["job_posting_id"] ?? "").slice(0, 8) + "…")}
+                    </td>
+                    <td className="p-2">
+                      {String(s["job_company"] ?? "—")}
                     </td>
                     <td className="p-2">{String(s["reason"] ?? "")}</td>
                     <td className="p-2">

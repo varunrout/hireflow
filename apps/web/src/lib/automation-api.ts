@@ -293,6 +293,10 @@ export const automationApi = {
     return res.data;
   },
 
+  deleteRun: async (runId: string): Promise<void> => {
+    await apiClient.delete(`/automation/runs/${runId}`);
+  },
+
   // Approval Queue
   getApprovalQueue: async (
     status = "pending",

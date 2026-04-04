@@ -457,6 +457,7 @@ class AutomationPipelineRun(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     user: Mapped["User"] = relationship("User", back_populates="automation_runs")
     approval_queue_items: Mapped[list["AutomationApprovalQueueItem"]] = relationship(

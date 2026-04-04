@@ -44,6 +44,8 @@ from app.schemas.schemas import (
     SchedulePreset,
 )
 from app.services.job_matching import run_matching_for_user
+from app.services.external_jobs import ExternalJobSearchService
+from app.services.job_ai import JobExtractionService
 
 router = APIRouter(prefix="/automation", tags=["automation"])
 
@@ -405,6 +407,89 @@ async def run_pipeline_now(
 
     t_start = time.monotonic()
 
+    # ── Step 0: Discover new jobs from external APIs ──
+    discovered_job_count = 0
+    if settings.search_terms:
+        try:
+            search_svc = ExternalJobSearchService()
+            extraction_svc = JobExtractionService()
+
+            # Collect existing source_job_ids to avoid duplicate imports
+            existing_source_ids_result = await db.execute(
+                select(JobPosting.source_job_id).where(
+                    JobPosting.user_id == current_user.id,
+                    JobPosting.source_job_id.is_not(None),
+                )
+            )
+            existing_source_ids: set[str] = {
+                str(sid) for sid in existing_source_ids_result.scalars().all() if sid
+            }
+
+            # Search each term against external providers
+            per_term_limit = max(max_jobs // len(settings.search_terms), 5)
+            all_external_items: list[dict] = []
+            for term in settings.search_terms[:5]:  # cap to 5 terms
+                loc = settings.target_locations[0] if settings.target_locations else None
+                try:
+                    items = await search_svc.search_jobs(
+                        role=term, location=loc, remote_only=False, limit=per_term_limit,
+                    )
+                    all_external_items.extend(items)
+                except Exception:
+                    continue  # skip failed providers, don't kill the run
+
+            # Deduplicate and import
+            seen_source_ids: set[str] = set()
+            for item in all_external_items:
+                sid = item.get("source_job_id")
+                if sid and (sid in existing_source_ids or sid in seen_source_ids):
+                    continue
+                if sid:
+                    seen_source_ids.add(sid)
+
+                # Quick import — create JobPosting + parse via heuristics
+                try:
+                    extraction = await extraction_svc.extract_job(
+                        item.get("description") or "",
+                        source_url=item.get("source_url"),
+                    )
+                    source_val = item.get("source", "other")
+                    valid_sources = {
+                        "linkedin", "indeed", "glassdoor", "greenhouse",
+                        "lever", "workday", "manual", "other",
+                    }
+                    job = JobPosting(
+                        title=item.get("title") or "Untitled",
+                        company=item.get("company") or "Unknown",
+                        location=item.get("location"),
+                        remote_type=item.get("remote_type"),
+                        employment_type=item.get("employment_type"),
+                        description=item.get("description") or "",
+                        requirements=item.get("requirements") or extraction.job.get("requirements", []),
+                        nice_to_haves=item.get("nice_to_haves") or extraction.job.get("nice_to_haves", []),
+                        source=source_val if source_val in valid_sources else "other",
+                        source_url=item.get("source_url"),
+                        source_job_id=sid,
+                        user_id=current_user.id,
+                    )
+                    db.add(job)
+                    await db.flush()
+
+                    from app.models.models import JobParseResult as JPR
+                    parse_result = JPR(
+                        job_posting_id=job.id,
+                        parser_version=extraction.extraction_method,
+                        raw_output={"job": extraction.job, "parse_result": extraction.parse_result},
+                        **extraction.parse_result,
+                    )
+                    db.add(parse_result)
+                    await db.flush()
+                    discovered_job_count += 1
+                except Exception:
+                    continue  # skip individual failed imports
+        except Exception:
+            pass  # discovery failure should not block the rest of the pipeline
+
     # ── Step 1: Run job matching ──
     t_score_start = time.monotonic()
     new_matches = await run_matching_for_user(
@@ -463,6 +548,20 @@ async def run_pipeline_now(
             continue
         seen_job_ids.add(match.job_posting_id)
         deduplicated.append(match)
+
+    # Build a lookup of job posting info for readable summaries
+    job_info_map: dict[UUID, dict] = {}
+    if seen_job_ids:
+        jp_result = await db.execute(
+            select(JobPosting.id, JobPosting.title, JobPosting.company, JobPosting.location)
+            .where(JobPosting.id.in_(seen_job_ids))
+        )
+        for row in jp_result:
+            job_info_map[row[0]] = {
+                "title": row[1] or "Untitled",
+                "company": row[2] or "Unknown",
+                "location": row[3],
+            }
 
     jobs_evaluated = len(matched_jobs)
 
@@ -666,6 +765,19 @@ async def run_pipeline_now(
         )
 
     skipped_jobs_count = len(skipped_details)
+
+    # Enrich skipped details with job info
+    for entry in skipped_details:
+        jpid_str = entry.get("job_posting_id")
+        if jpid_str:
+            try:
+                jpid = UUID(jpid_str)
+                info = job_info_map.get(jpid, {})
+                entry["job_title"] = info.get("title", "Untitled")
+                entry["job_company"] = info.get("company", "Unknown")
+            except (ValueError, AttributeError):
+                pass
+
     reviewed_jobs_count = len(review_tier) + len(auto_apply_tier)
     total_duration_ms = int((time.monotonic() - t_start) * 1000)
 
@@ -704,6 +816,7 @@ async def run_pipeline_now(
     run.summary = {
         "dry_run": payload.dry_run,
         "newly_matched_jobs": newly_matched_count,
+        "discovered_from_external": discovered_job_count,
         "settings_enabled": settings.enabled,
         "auto_apply_enabled": settings.auto_apply_enabled,
         "require_human_review": settings.require_human_review,
@@ -716,6 +829,22 @@ async def run_pipeline_now(
             "save": len(save_tier),
         },
         "score_distribution": score_ranges,
+        "matched_job_details": [
+            {
+                "match_id": str(m.id),
+                "job_posting_id": str(m.job_posting_id),
+                "score": round(m.overall_score, 1),
+                "title": job_info_map.get(m.job_posting_id, {}).get("title", "Untitled"),
+                "company": job_info_map.get(m.job_posting_id, {}).get("company", "Unknown"),
+                "location": job_info_map.get(m.job_posting_id, {}).get("location"),
+                "tier": (
+                    "auto_apply" if m.overall_score >= settings.confidence_auto_apply_threshold
+                    else "review" if m.overall_score >= settings.confidence_review_threshold
+                    else "save"
+                ),
+            }
+            for m in deduplicated
+        ],
         "evaluated_match_ids": [str(m.id) for m in deduplicated],
         "candidate_job_posting_ids": [
             str(m.job_posting_id) for m in deduplicated
@@ -779,14 +908,18 @@ async def list_runs(
 
     total_result = await db.execute(
         select(func.count(AutomationPipelineRun.id)).where(
-            AutomationPipelineRun.user_id == current_user.id
+            AutomationPipelineRun.user_id == current_user.id,
+            AutomationPipelineRun.deleted_at.is_(None),
         )
     )
     total = int(total_result.scalar_one() or 0)
 
     runs_result = await db.execute(
         select(AutomationPipelineRun)
-        .where(AutomationPipelineRun.user_id == current_user.id)
+        .where(
+            AutomationPipelineRun.user_id == current_user.id,
+            AutomationPipelineRun.deleted_at.is_(None),
+        )
         .order_by(AutomationPipelineRun.started_at.desc())
         .limit(bounded_limit)
     )
@@ -809,6 +942,7 @@ async def get_run_detail(
         select(AutomationPipelineRun).where(
             AutomationPipelineRun.id == run_id,
             AutomationPipelineRun.user_id == current_user.id,
+            AutomationPipelineRun.deleted_at.is_(None),
         )
     )
     run = result.scalar_one_or_none()
@@ -869,6 +1003,26 @@ async def retry_run(
     )
     request = AutomationRunRequest(dry_run=dry_run)
     return await run_pipeline_now(request, current_user, db)
+
+
+@router.delete("/runs/{run_id}", status_code=204)
+async def delete_run(
+    run_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    result = await db.execute(
+        select(AutomationPipelineRun).where(
+            AutomationPipelineRun.id == run_id,
+            AutomationPipelineRun.user_id == current_user.id,
+            AutomationPipelineRun.deleted_at.is_(None),
+        )
+    )
+    run = result.scalar_one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    run.deleted_at = datetime.now(timezone.utc)
+    await db.flush()
 
 
 # ---------------------------------------------------------------------------
