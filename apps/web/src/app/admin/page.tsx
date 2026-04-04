@@ -40,8 +40,8 @@ interface TestResult {
   error?: string;
 }
 
-const CANDIDATE_EMAIL = "test.admin+hireflow@example.com";
-const CANDIDATE_PASSWORD = "Password1";
+const CANDIDATE_EMAIL = "test.admin@email.com";
+const CANDIDATE_PASSWORD = "TestAdmin01";
 const CANDIDATE_FULL_NAME = "HireFlow Admin Tester";
 
 const SAMPLE_JOB_TEXT = `Senior Backend Engineer\nAcme Labs\nRemote - United States\n\nWe are looking for a Senior Backend Engineer to build APIs and distributed systems.\nRequirements:\n- 5+ years of backend software engineering experience\n- Strong Python and FastAPI skills\n- Experience with PostgreSQL, Docker, and Redis\nNice to have:\n- Kubernetes\n- AWS\nResponsibilities:\n- Build scalable APIs\n- Collaborate with product and frontend teams\nBenefits:\n- Health insurance\n- Learning budget\n`;
