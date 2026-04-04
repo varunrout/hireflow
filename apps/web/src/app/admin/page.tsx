@@ -532,6 +532,7 @@ export default function AdminPage() {
 
   const automationTests = useMemo<TestCase[]>(
     () => [
+      // --- Settings ---
       {
         id: "automation-get-settings",
         name: "Fetch automation settings",
@@ -541,9 +542,11 @@ export default function AdminPage() {
       },
       {
         id: "automation-upsert-settings",
-        name: "Save automation settings",
+        name: "Save automation settings (full payload)",
         method: "PUT",
         endpoint: "/automation/settings",
+        description:
+          "Saves settings with scheduling, discovery, confidence tiers, and notification config.",
         run: async () =>
           automationApi.saveSettings({
             enabled: true,
@@ -558,20 +561,51 @@ export default function AdminPage() {
             min_match_score: 65,
             max_jobs_per_run: 20,
             max_applications_per_day: 3,
+            // Scheduling
+            schedule_enabled: false,
+            schedule_cron: null,
+            schedule_timezone: "UTC",
+            schedule_paused: false,
+            run_window_start: null,
+            run_window_end: null,
+            // Discovery
+            freshness_days: 30,
+            company_blacklist: [],
+            company_whitelist: [],
+            min_salary_floor: null,
+            experience_levels: [],
+            employment_types: ["full_time"],
+            target_industries: [],
+            excluded_industries: [],
+            // Confidence tiers
+            confidence_auto_apply_threshold: 90,
+            confidence_review_threshold: 75,
+            confidence_save_threshold: 65,
+            // Notifications
+            email_digest_enabled: false,
+            email_digest_frequency: "weekly",
+            high_match_alert_enabled: false,
+            high_match_alert_threshold: 90,
           }),
       },
+      // --- Readiness ---
       {
         id: "automation-readiness",
         name: "Fetch automation readiness",
         method: "GET",
         endpoint: "/automation/readiness",
+        description:
+          "Returns profile completeness, skill coverage, data quality warnings, blockers, and suggestions.",
         run: async () => automationApi.getReadiness(),
       },
+      // --- Runs ---
       {
         id: "automation-run-dry",
         name: "Trigger dry-run automation cycle",
         method: "POST",
         endpoint: "/automation/runs",
+        description:
+          "Runs the pipeline with dry_run=true so no applications or queue items are created.",
         run: async () => automationApi.runNow({ dry_run: true }),
       },
       {
@@ -580,6 +614,119 @@ export default function AdminPage() {
         method: "GET",
         endpoint: "/automation/runs",
         run: async () => automationApi.listRuns(10),
+      },
+      {
+        id: "automation-get-run-detail",
+        name: "Fetch latest run detail",
+        method: "GET",
+        endpoint: "/automation/runs/{runId}",
+        description: "Fetches full detail of the most recent pipeline run.",
+        run: async () => {
+          const runs = await automationApi.listRuns(1);
+          const latest = runs.items[0];
+          if (!latest?.id) throw new Error("No runs available to fetch detail for");
+          return automationApi.getRunDetail(latest.id);
+        },
+      },
+      {
+        id: "automation-cancel-run",
+        name: "Cancel completed run (expect 400)",
+        method: "POST",
+        endpoint: "/automation/runs/{runId}/cancel",
+        description: "Attempts to cancel an already-completed run — should return 400.",
+        expectFailure: true,
+        expectedStatus: 400,
+        run: async () => {
+          const runs = await automationApi.listRuns(1);
+          const latest = runs.items[0];
+          if (!latest?.id) throw new Error("No runs available");
+          return automationApi.cancelRun(latest.id);
+        },
+      },
+      {
+        id: "automation-retry-run",
+        name: "Retry completed run (expect 400)",
+        method: "POST",
+        endpoint: "/automation/runs/{runId}/retry",
+        description: "Attempts to retry a completed run — should return 400.",
+        expectFailure: true,
+        expectedStatus: 400,
+        run: async () => {
+          const runs = await automationApi.listRuns(1);
+          const latest = runs.items[0];
+          if (!latest?.id) throw new Error("No runs available");
+          return automationApi.retryRun(latest.id);
+        },
+      },
+      // --- Approval Queue ---
+      {
+        id: "automation-approval-queue",
+        name: "List approval queue items",
+        method: "GET",
+        endpoint: "/automation/approval-queue",
+        description: "Fetches pending approval queue items.",
+        run: async () => automationApi.getApprovalQueue("pending", 20),
+      },
+      {
+        id: "automation-approval-batch-empty",
+        name: "Batch decide with empty list (expect 422)",
+        method: "POST",
+        endpoint: "/automation/approval-queue/batch",
+        description: "Sends a batch decision with empty item_ids — should be rejected.",
+        expectFailure: true,
+        expectedStatus: 422,
+        run: async () =>
+          automationApi.batchDecide({
+            item_ids: [],
+            action: "approved",
+            notes: "Admin Test Console batch",
+          }),
+      },
+      // --- Analytics ---
+      {
+        id: "automation-analytics",
+        name: "Fetch automation analytics (30 days)",
+        method: "GET",
+        endpoint: "/automation/analytics",
+        description:
+          "Returns score distribution, match trend, top companies, application funnel, and daily stats.",
+        run: async () => automationApi.getAnalytics(30),
+      },
+      // --- Schedule ---
+      {
+        id: "automation-schedule",
+        name: "Fetch schedule info and presets",
+        method: "GET",
+        endpoint: "/automation/schedule",
+        description: "Returns current schedule configuration and available cron presets.",
+        run: async () => automationApi.getSchedule(),
+      },
+      // --- Notifications ---
+      {
+        id: "automation-notifications",
+        name: "List automation notifications",
+        method: "GET",
+        endpoint: "/automation/notifications",
+        description: "Fetches notifications with unread_count.",
+        run: async () => automationApi.getNotifications(20),
+      },
+      {
+        id: "automation-mark-all-read",
+        name: "Mark all notifications as read",
+        method: "POST",
+        endpoint: "/automation/notifications/read-all",
+        run: async () => automationApi.markAllNotificationsRead(),
+      },
+      {
+        id: "automation-notification-read-invalid",
+        name: "Mark invalid notification read (expect 404)",
+        method: "POST",
+        endpoint: "/automation/notifications/{id}/read",
+        description: "Attempts to mark a non-existent notification as read — should return 404.",
+        expectFailure: true,
+        expectedStatus: 404,
+        run: async () =>
+          automationApi.markNotificationRead("00000000-0000-0000-0000-000000000000"),
       },
     ],
     [seed.location, seed.role],
@@ -630,8 +777,9 @@ export default function AdminPage() {
     },
     {
       id: "automation",
-      title: "Automation",
-      description: "Automation settings, readiness, and run history",
+      title: "Automation Pipeline",
+      description:
+        "Settings, readiness, runs, approval queue, analytics, schedule, and notifications",
       icon: "🤖",
       tests: automationTests,
     },
